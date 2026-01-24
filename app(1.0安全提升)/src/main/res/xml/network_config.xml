@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- 
+        网络安全配置说明：
+        1. 允许 HTTP 明文传输（cleartextTrafficPermitted="true"）
+        2. 实际的域名白名单拦截由代码层 NetworkSecurityInterceptor 实现
+        3. 只允许访问 sdattg.com 和 sdacn.cn（包含所有子域名）
+        4. 所有其他域名（包括 IP、localhost）均被拦截
+    -->
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
