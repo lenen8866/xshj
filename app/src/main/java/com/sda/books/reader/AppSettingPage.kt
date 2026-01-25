@@ -104,7 +104,7 @@ class AppSettingPage : BaseActivity() {
             startActivity(Intent(this, AppUpdateDbPage::class.java))
             finish()
         }
-        Log.i("cccccc","oncreate====${resources.configuration.locale.language}")
+        Log.i("cccccc","oncreate====${resources.configuration.locales[0].language}")
         fontSize = AppSettingUtil.getTextSize()
         hSpace = AppSettingUtil.getTextLetterSpacing()
         vSpace = AppSettingUtil.getTextLineSpacingMultiplier()
@@ -398,11 +398,7 @@ class AppSettingPage : BaseActivity() {
                 override fun onGlobalLayout() {
 
                     // 移除监听器，避免重复调用
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-                        binding.tv1.getViewTreeObserver().removeOnGlobalLayoutListener(this)
-                    } else {
-                        binding.tv1.getViewTreeObserver().removeGlobalOnLayoutListener(this)
-                    }
+                    binding.tv1.getViewTreeObserver().removeOnGlobalLayoutListener(this)
 
 
                     // 获取一行可显示的字符数
@@ -524,16 +520,26 @@ class AppSettingPage : BaseActivity() {
         val paint = textView.paint
         val width = textView.width - textView.paddingLeft - textView.paddingRight
 
-        // 创建 StaticLayout 实例来测量文本
-        val layout = StaticLayout(
-            text,
-            paint,
-            width,
-            Layout.Alignment.ALIGN_NORMAL,
-            1.0f,  // 行间距倍数
-            0.0f,  // 额外行间距
-            false // 是否包含额外空间
-        )
+        // 使用 StaticLayout.Builder 创建实例（Android 6.0+ 的新写法）
+        val layout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            StaticLayout.Builder.obtain(text, 0, text.length, paint, width)
+                .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+                .setLineSpacing(0.0f, 1.0f)
+                .setIncludePad(false)
+                .build()
+        } else {
+            // Android 6.0 以下使用旧构造函数
+            @Suppress("DEPRECATION")
+            StaticLayout(
+                text,
+                paint,
+                width,
+                Layout.Alignment.ALIGN_NORMAL,
+                1.0f,
+                0.0f,
+                false
+            )
+        }
 
         // 返回第一行的字符数
         return layout.getLineEnd(0) - layout.getLineStart(0)

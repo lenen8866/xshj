@@ -25,7 +25,10 @@ import com.sda.books.reader.store.StoreManager
 import com.sda.books.reader.util.AppSettingUtil
 import com.sda.books.reader.util.dpToPx
 import com.bumptech.glide.Glide
-import com.eightbitlab.rxbus.Bus
+import com.sda.books.reader.event.EventBus
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class ChapterContentAdapter(val matchContent:ArrayList<String>) : RecyclerView.Adapter<ChapterContentAdapter.ChapterContentHolder>() {
 
@@ -206,8 +209,9 @@ class ChapterContentAdapter(val matchContent:ArrayList<String>) : RecyclerView.A
             binding.tvContent.post {
                 //LogUtils.e("行高==========----===${binding.tvContent.lineHeight}")
                 LogUtils.e("行高==========----===${binding.tvContent.measuredHeight}")
-                Bus.send(binding.tvContent.measuredHeight)
-
+                CoroutineScope(Dispatchers.Main).launch {
+                    EventBus.sendChapterHeight(binding.tvContent.measuredHeight)
+                }
             }
 
         }
@@ -298,7 +302,7 @@ class ChapterContentAdapter(val matchContent:ArrayList<String>) : RecyclerView.A
 //                Pattern.compile(Pattern.quote(it), Pattern.CASE_INSENSITIVE)
 //            }
 
-            // 按长度降序排序关键词，避免短关键词在长关键词内匹配
+            // 按长度降序排序关键词,避免短关键词在长关键词内匹配
             val sortedKeywords = keywords.sortedByDescending { it.length }
 
             // 安全替换关键词

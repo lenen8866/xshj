@@ -34,15 +34,13 @@ import com.sda.books.reader.vm.AppCategoryViewModel
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
 import com.gyf.immersionbar.ImmersionBar
-import com.lzy.okgo.OkGo
-import com.lzy.okgo.callback.FileCallback
-import com.lzy.okgo.callback.StringCallback
-import com.lzy.okgo.model.Progress
-import com.lzy.okgo.model.Response
+import com.sda.books.reader.api.RetrofitClient
 import com.sda.books.reader.entity.UpdateDio
 import com.sda.books.reader.view.CustomDialog
 import es.dmoral.toasty.Toasty
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 
@@ -137,109 +135,90 @@ class AppCategoryPage : BaseActivity() {
                     params["locale"]="zh-CN"
                 }
 
-
-                OkGo.get<String>("http://xshj.version.sdattg.com/BanBen/version/version.php")
-                    .params(params)
-                    .execute(object : StringCallback(){
-                        override fun onSuccess(response: Response<String?>?) {
-                            var strResult = response?.body()
-                            LogUtils.e("下载链接"+ strResult)
-                            var updateEntity = Gson().fromJson(strResult, UpdateDio::class.java)
-                            SPUtils.getInstance().put(Constant.mandatory,updateEntity.mandatory)
-                            LogUtils.e("下载链接"+ SPUtils.getInstance().getBoolean(Constant.mandatory,false))
-                            SPUtils.getInstance().put(Constant.loadUrl,updateEntity.assets.url)
-                            SPUtils.getInstance().put(Constant.newVersion,updateEntity.latestVersion)
-                            SPUtils.getInstance().put(Constant.appSize,updateEntity.assets.size)
-                            LogUtils.e("下载链接"+updateEntity.mandatory)
-                            if(updateEntity.mandatory){
-                                var strNotice = ""
-                                updateEntity.releaseNotes.forEach { item ->
-                                    strNotice = strNotice+item+"\n"
-
+                try {
+                    val response = withContext(Dispatchers.IO) {
+                        RetrofitClient.versionApi.checkVersion(params)
+                    }
+                    
+                    if (response.isSuccessful && response.body() != null) {
+                        val updateEntity = response.body()!!
+                        LogUtils.e("下载链接: $updateEntity")
+                        SPUtils.getInstance().put(Constant.mandatory, updateEntity.getMandatory())
+                        LogUtils.e("下载链接" + SPUtils.getInstance().getBoolean(Constant.mandatory, false))
+                        SPUtils.getInstance().put(Constant.loadUrl, updateEntity.getAssets().getUrl())
+                        SPUtils.getInstance().put(Constant.newVersion, updateEntity.getLatestVersion())
+                        SPUtils.getInstance().put(Constant.appSize, updateEntity.getAssets().getSize())
+                        LogUtils.e("下载链接" + updateEntity.getMandatory())
+                        
+                        if (updateEntity.getMandatory()) {
+                            var strNotice = ""
+                            updateEntity.getReleaseNotes().forEach { item ->
+                                strNotice = strNotice + item + "\n"
+                            }
+                            SPUtils.getInstance().put(Constant.loadNotice, strNotice)
+                            dialogNeedUpdate?.let {
+                                it.show()
+                                var views = it.views
+                                var tv_old_version = views[0] as TextView
+                                var tv_new_version = views[1] as TextView
+                                var tv_app_size = views[2] as TextView
+                                var tv_notice = views[3] as TextView
+                                tv_old_version.getPaint().setFlags(Paint.STRIKE_THRU_TEXT_FLAG)
+                                tv_old_version.getPaint().setAntiAlias(true)
+                                tv_old_version.text = AppUtils.getAppVersionName()
+                                tv_new_version.text = "新版" + SPUtils.getInstance().getString(Constant.newVersion)
+                                tv_app_size.text = SPUtils.getInstance().getString(Constant.appSize)
+                                tv_notice.text = SPUtils.getInstance().getString(Constant.loadNotice)
+                                it.setOnDialogItemClickListener { dialog, view ->
+                                    when (view.id) {
+                                        R.id.tv_sure -> {
+                                            if (isClick) {
+                                                loadNewApp(SPUtils.getInstance().getString(Constant.loadUrl))
+                                            }
+                                        }
+                                    }
                                 }
-                                SPUtils.getInstance().put(Constant.loadNotice,strNotice)
-                                dialogNeedUpdate?.let {
+                            }
+                        } else {
+                            if (updateEntity.getUpdateAvailable()) {
+                                var strNotice = ""
+                                updateEntity.getReleaseNotes().forEach { item ->
+                                    strNotice = strNotice + item + "\n"
+                                }
+                                SPUtils.getInstance().put(Constant.loadNotice, strNotice)
+                                dialogUpdate?.let {
                                     it.show()
                                     var views = it.views
                                     var tv_old_version = views[0] as TextView
                                     var tv_new_version = views[1] as TextView
                                     var tv_app_size = views[2] as TextView
                                     var tv_notice = views[3] as TextView
-                                    tv_old_version.getPaint().setFlags(Paint. STRIKE_THRU_TEXT_FLAG ); //中间横线
-                                    tv_old_version.getPaint().setAntiAlias(true);// 抗锯齿
+                                    tv_old_version.getPaint().setFlags(Paint.STRIKE_THRU_TEXT_FLAG)
+                                    tv_old_version.getPaint().setAntiAlias(true)
                                     tv_old_version.text = AppUtils.getAppVersionName()
-                                    tv_new_version.text = "新版"+SPUtils.getInstance().getString(Constant.newVersion)
+                                    tv_new_version.text = "新版" + updateEntity.getLatestVersion()
                                     tv_app_size.text = SPUtils.getInstance().getString(Constant.appSize)
-
-                                    tv_notice.text = SPUtils.getInstance().getString(Constant.loadNotice)
-                                    it.setOnDialogItemClickListener { dialog, view ->
-                                        when(view.id){
-                                            R.id.tv_sure -> {
-                                                //dialog.cancel()
-                                                if(isClick){
-                                                    loadNewApp(SPUtils.getInstance().getString(Constant.loadUrl))
+                                    tv_notice.text = strNotice
+                                    it.setOnDialogItemClickListener(object : CustomDialog.OnCustomDialogItemClickListener {
+                                        override fun OnCustomDialogItemClick(dialog: CustomDialog?, view: View?) {
+                                            when (view?.id) {
+                                                R.id.tv_cancel -> {
+                                                    dialogUpdate?.dismiss()
                                                 }
-
+                                                R.id.tv_sure -> {
+                                                    dialogUpdate?.dismiss()
+                                                    loadNewApp(updateEntity.getAssets().getUrl())
+                                                }
                                             }
                                         }
-                                    }
-                                }
-
-                            }else{
-                                if(updateEntity.updateAvailable){
-                                    var strNotice = ""
-                                    updateEntity.releaseNotes.forEach { item ->
-                                        strNotice = strNotice+item+"\n"
-
-                                    }
-                                    SPUtils.getInstance().put(Constant.loadNotice,strNotice)
-                                    dialogUpdate?.let {
-                                        it.show()
-                                        var views = it.views
-                                        var tv_old_version = views[0] as TextView
-                                        var tv_new_version = views[1] as TextView
-                                        var tv_app_size = views[2] as TextView
-                                        var tv_notice = views[3] as TextView
-                                        tv_old_version.getPaint().setFlags(Paint. STRIKE_THRU_TEXT_FLAG ); //中间横线
-                                        tv_old_version.getPaint().setAntiAlias(true);// 抗锯齿
-                                        tv_old_version.text = AppUtils.getAppVersionName()
-                                        tv_new_version.text = "新版"+ updateEntity.latestVersion
-                                        tv_app_size.text = SPUtils.getInstance().getString(Constant.appSize)
-                                        tv_notice.text = strNotice
-                                        it.setOnDialogItemClickListener(object : CustomDialog.OnCustomDialogItemClickListener{
-                                            override fun OnCustomDialogItemClick(
-                                                dialog: CustomDialog?,
-                                                view: View?
-                                            ) {
-                                                when(view?.id){
-                                                    R.id.tv_cancel -> {
-                                                        dialogUpdate?.dismiss()
-                                                    }
-                                                    R.id.tv_sure -> {
-                                                        dialogUpdate?.dismiss()
-                                                        /*if(isClick){
-                                                            loadNewApp(updateEntity.assets.url)
-                                                        }*/
-                                                        loadNewApp(updateEntity.assets.url)
-
-                                                    }
-                                                }
-                                            }
-
-
-
-                                        })
-
-                                    }
-
+                                    })
                                 }
                             }
-
-
-
                         }
-
-                    })
+                    }
+                } catch (e: Exception) {
+                    LogUtils.e("版本检查失败: ${e.message}")
+                }
             }else{
                 if(SPUtils.getInstance().getBoolean(Constant.mandatory,false)){
                     if(!AppUtils.getAppVersionName().equals(SPUtils.getInstance().getString(Constant.newVersion)) ){
@@ -288,172 +267,6 @@ class AppCategoryPage : BaseActivity() {
                 }
             }
         }
-
-
-        //判断是否开启强制更新
-       /* if(SPUtils.getInstance().getBoolean(Constant.mandatory,false)){
-            if(!AppUtils.getAppVersionName().equals(SPUtils.getInstance().getString(Constant.newVersion)) ){
-                if(!StringUtils.isEmpty(SPUtils.getInstance().getString(Constant.loadUrl))){
-                    dialogNeedUpdate?.let {
-                        it.show()
-                        var views = it.views
-                        var tv_old_version = views[0] as TextView
-                        var tv_new_version = views[1] as TextView
-                        var tv_app_size = views[2] as TextView
-                        var tv_notice = views[3] as TextView
-                        tv_old_version.getPaint().setFlags(Paint. STRIKE_THRU_TEXT_FLAG ); //中间横线
-                        tv_old_version.getPaint().setAntiAlias(true);// 抗锯齿
-                        tv_old_version.text = AppUtils.getAppVersionName()
-                        tv_new_version.text = "新版"+SPUtils.getInstance().getString(Constant.newVersion)
-                        tv_app_size.text = SPUtils.getInstance().getString(Constant.appSize)
-
-                        tv_notice.text = SPUtils.getInstance().getString(Constant.loadNotice)
-                        it.setOnDialogItemClickListener { dialog, view ->
-                            when(view.id){
-                                R.id.tv_sure -> {
-                                    //dialog.cancel()
-
-                                    if(isClick){
-                                        loadNewApp(SPUtils.getInstance().getString(Constant.loadUrl))
-                                    }
-
-                                }
-                            }
-                        }
-                    }
-
-
-                }else{
-                    ToastUtils.showLong("请下载新的版本")
-
-                }
-            }else{
-
-            }
-
-
-        }else{
-            LogUtils.e("008========>>>>")
-            var params = mutableMapOf<String, String>()
-            params["ver"]= AppUtils.getAppVersionName()
-            //params["ver"]= "2.4.10"
-            params["platform"]="android"
-            params["channel"]="stable"
-            if(AppSettingUtil.getIsOpenEn()){
-                params["locale"]="en"
-            }else{
-                params["locale"]="zh-CN"
-            }
-
-
-            OkGo.get<String>("http://xshj.version.sdattg.com/BanBen/version/version.php")
-                .params(params)
-                .execute(object : StringCallback(){
-                    override fun onSuccess(response: Response<String?>?) {
-                        var strResult = response?.body()
-                        LogUtils.e("下载链接"+ strResult)
-                        var updateEntity = Gson().fromJson(strResult, UpdateDio::class.java)
-                        SPUtils.getInstance().put(Constant.mandatory,updateEntity.mandatory)
-                        LogUtils.e("下载链接"+ SPUtils.getInstance().getBoolean(Constant.mandatory,false))
-                        SPUtils.getInstance().put(Constant.loadUrl,updateEntity.assets.url)
-                        SPUtils.getInstance().put(Constant.newVersion,updateEntity.latestVersion)
-                        SPUtils.getInstance().put(Constant.appSize,updateEntity.assets.size)
-                        LogUtils.e("下载链接"+updateEntity.mandatory)
-                        if(updateEntity.mandatory){
-                            var strNotice = ""
-                            updateEntity.releaseNotes.forEach { item ->
-                                strNotice = strNotice+item+"\n"
-
-                            }
-                            SPUtils.getInstance().put(Constant.loadNotice,strNotice)
-                            dialogNeedUpdate?.let {
-                                it.show()
-                                var views = it.views
-                                var tv_old_version = views[0] as TextView
-                                var tv_new_version = views[1] as TextView
-                                var tv_app_size = views[2] as TextView
-                                var tv_notice = views[3] as TextView
-                                tv_old_version.getPaint().setFlags(Paint. STRIKE_THRU_TEXT_FLAG ); //中间横线
-                                tv_old_version.getPaint().setAntiAlias(true);// 抗锯齿
-                                tv_old_version.text = AppUtils.getAppVersionName()
-                                tv_new_version.text = "新版"+SPUtils.getInstance().getString(Constant.newVersion)
-                                tv_app_size.text = SPUtils.getInstance().getString(Constant.appSize)
-
-                                tv_notice.text = SPUtils.getInstance().getString(Constant.loadNotice)
-                                it.setOnDialogItemClickListener { dialog, view ->
-                                    when(view.id){
-                                        R.id.tv_sure -> {
-                                            //dialog.cancel()
-                                            if(isClick){
-                                                loadNewApp(SPUtils.getInstance().getString(Constant.loadUrl))
-                                            }
-
-                                        }
-                                    }
-                                }
-                            }
-
-                        }else{
-                            if(updateEntity.updateAvailable){
-                                var strNotice = ""
-                                updateEntity.releaseNotes.forEach { item ->
-                                    strNotice = strNotice+item+"\n"
-
-                                }
-                                SPUtils.getInstance().put(Constant.loadNotice,strNotice)
-                                dialogUpdate?.let {
-                                    it.show()
-                                    var views = it.views
-                                    var tv_old_version = views[0] as TextView
-                                    var tv_new_version = views[1] as TextView
-                                    var tv_app_size = views[2] as TextView
-                                    var tv_notice = views[3] as TextView
-                                    tv_old_version.getPaint().setFlags(Paint. STRIKE_THRU_TEXT_FLAG ); //中间横线
-                                    tv_old_version.getPaint().setAntiAlias(true);// 抗锯齿
-                                    tv_old_version.text = AppUtils.getAppVersionName()
-                                    tv_new_version.text = "新版"+ updateEntity.latestVersion
-                                    tv_app_size.text = SPUtils.getInstance().getString(Constant.appSize)
-                                    tv_notice.text = strNotice
-                                    it.setOnDialogItemClickListener(object : CustomDialog.OnCustomDialogItemClickListener{
-                                        override fun OnCustomDialogItemClick(
-                                            dialog: CustomDialog?,
-                                            view: View?
-                                        ) {
-                                            when(view?.id){
-                                                R.id.tv_cancel -> {
-                                                    dialogUpdate?.dismiss()
-                                                }
-                                                R.id.tv_sure -> {
-                                                    dialogUpdate?.dismiss()
-                                                    if(isClick){
-                                                        loadNewApp(updateEntity.assets.url)
-                                                    }
-
-
-                                                }
-                                            }
-                                        }
-
-
-
-                                    })
-
-                                }
-
-                            }
-                        }
-
-
-
-                    }
-
-                })
-
-
-
-
-
-        }*/
 
 
         mUpdateDbOb.observe(this, {
@@ -511,20 +324,6 @@ class AppCategoryPage : BaseActivity() {
         // 3. 启动这个 Intent
         startActivity(intent)
         isClick =  true
-        /*OkGo.get<File>(appUrl)
-            .execute(object : FileCallback(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.absolutePath, //下载文件的路径
-                "new.apk" ){
-                override fun onSuccess(response: Response<File?>?) {
-                    var path = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.absolutePath + ""
-                    AppUtils.installApp(path+ "/new.apk")
-                }
-
-                override fun downloadProgress(progress: Progress?) {
-                    super.downloadProgress(progress)
-                    LogUtils.e("008========>>>>下载进度"+progress)
-                }
-
-            })*/
     }
 
     //@SuppressLint("ResourceType")

@@ -1,4 +1,6 @@
 # 信使汇集_安卓
+### 后台版本测试
+http://xshj.version.sdattg.com/BanBen/version/admin888.html
 “执行方案”写得接近工程级 SOP了
 #### 介绍
 包含2个版本，apk和aab

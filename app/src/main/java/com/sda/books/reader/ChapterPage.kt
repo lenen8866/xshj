@@ -32,8 +32,8 @@ import com.sda.books.reader.store.StoreManager
 import com.sda.books.reader.util.AppSettingUtil
 import com.sda.books.reader.util.Constant
 import com.sda.books.reader.util.getChapterContentShowList
-import com.eightbitlab.rxbus.Bus
-import com.eightbitlab.rxbus.registerInBus
+import com.sda.books.reader.event.EventBus
+import kotlinx.coroutines.flow.collectLatest
 import com.gyf.immersionbar.ImmersionBar
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -225,19 +225,13 @@ class ChapterPage : BaseActivity() {
         })
         //binding.vs.attachToRecyclerView(binding.chapterContentList)
 
-        Bus.observe<Int>()
-            .subscribe {
-                if(scrollIndex > 0){
-                    /*lifecycleScope.launch {
-                        delay(500)
-                        scrollLineHeight(scrollIndex*AppSettingUtil.getTextSectionHLetterSpacing(),stopLineCount)
-                    }*/
-                   // binding.chapterContentList.smoothScrollBy(0,height.toInt()-3000)
-                    //stopLineCount*it/totalLineCount
-                    binding.chapterContentList.smoothScrollBy(0,(stopLineCount*it/totalLineCount))
+        lifecycleScope.launch {
+            EventBus.chapterHeightFlow.collectLatest { height ->
+                if (scrollIndex > 0 && totalLineCount > 0) {
+                    binding.chapterContentList.smoothScrollBy(0, (stopLineCount * height / totalLineCount))
                 }
-
-            }.registerInBus(this)
+            }
+        }
 
     }
 
@@ -1178,7 +1172,7 @@ class ChapterPage : BaseActivity() {
         super.onDestroy()
         handler.removeCallbacks(run)
         player?.release()
-        Bus.unregister(this)
+        // Flow 会自动取消，无需手动注销
 
     }
 

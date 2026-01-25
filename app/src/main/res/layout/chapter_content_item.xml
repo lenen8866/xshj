@@ -8,7 +8,6 @@
     android:gravity="center_vertical"
     android:orientation="vertical">
 
-
     <ImageView
         android:id="@+id/iv_img"
         app:layout_constraintWidth_percent="0.8"
@@ -18,30 +17,19 @@
         app:layout_constraintTop_toTopOf="parent"
         android:layout_height="wrap_content"/>
 
-
-    <com.sda.books.reader.view.SelectableTextView
+    <!-- 使用原生 TextView，启用文本选择 -->
+    <TextView
+        android:id="@+id/tv_content"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        android:id="@+id/tv_content"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:textSize="18sp"
-        tools:text="1312"
-        android:focusable="false"
-
         android:textColor="#FF666666"
-
-        app:selected_color="@color/holo_orange_dark"
-        app:cursor_handle_color="@color/holo_blue_bright"/>
-   <!-- <TextView
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        android:id="@+id/tv_content"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:textSize="18sp"
-        tools:text="1312"
         android:textIsSelectable="true"
-        />-->
+        android:longClickable="true"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        tools:text="示例文本，长按可以选择和复制" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
