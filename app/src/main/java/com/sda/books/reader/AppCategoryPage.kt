@@ -13,7 +13,7 @@ import android.widget.TextView
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
-import com.alibaba.fastjson.JSON
+import com.google.gson.Gson
 import com.blankj.utilcode.util.AppUtils
 import com.blankj.utilcode.util.LogUtils
 import com.blankj.utilcode.util.NetworkUtils
@@ -143,8 +143,8 @@ class AppCategoryPage : BaseActivity() {
                     .execute(object : StringCallback(){
                         override fun onSuccess(response: Response<String?>?) {
                             var strResult = response?.body()
-                            LogUtils.e("下载链接"+ JSON.parseObject(strResult))
-                            var updateEntity = JSON.parseObject(strResult, UpdateDio::class.java);
+                            LogUtils.e("下载链接"+ strResult)
+                            var updateEntity = Gson().fromJson(strResult, UpdateDio::class.java)
                             SPUtils.getInstance().put(Constant.mandatory,updateEntity.mandatory)
                             LogUtils.e("下载链接"+ SPUtils.getInstance().getBoolean(Constant.mandatory,false))
                             SPUtils.getInstance().put(Constant.loadUrl,updateEntity.assets.url)
@@ -351,8 +351,8 @@ class AppCategoryPage : BaseActivity() {
                 .execute(object : StringCallback(){
                     override fun onSuccess(response: Response<String?>?) {
                         var strResult = response?.body()
-                        LogUtils.e("下载链接"+ JSON.parseObject(strResult))
-                        var updateEntity = JSON.parseObject(strResult, UpdateDio::class.java);
+                        LogUtils.e("下载链接"+ strResult)
+                        var updateEntity = Gson().fromJson(strResult, UpdateDio::class.java)
                         SPUtils.getInstance().put(Constant.mandatory,updateEntity.mandatory)
                         LogUtils.e("下载链接"+ SPUtils.getInstance().getBoolean(Constant.mandatory,false))
                         SPUtils.getInstance().put(Constant.loadUrl,updateEntity.assets.url)

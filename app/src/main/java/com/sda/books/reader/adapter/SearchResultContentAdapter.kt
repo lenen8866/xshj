@@ -13,7 +13,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.MarginLayoutParams
 import androidx.recyclerview.widget.RecyclerView
-import com.alibaba.fastjson.JSON
+import com.google.gson.Gson
 import com.blankj.utilcode.util.LogUtils
 import com.sda.books.reader.ChapterPage
 import com.sda.books.reader.LanguageUtils
@@ -158,7 +158,7 @@ class SearchResultContentAdapter(val activity: Activity,val pageSize:Int) :
 
             val volName = getShowVolumeName(searchResultEntity.chapter.volName)
             binding.root.setOnClickListener {
-                LogUtils.e("scrollIndex============${JSON.toJSONString(searchResultEntity) }")
+                LogUtils.e("scrollIndex============${Gson().toJson(searchResultEntity) }")
                 ChapterPage.start(
                     activity, volName,
                     searchResultEntity.chapter.name,

@@ -1,30 +1,30 @@
 package com.sda.books.reader.entity;
 
-import com.alibaba.fastjson.annotation.JSONField;
+import com.google.gson.annotations.SerializedName;
 
 import java.util.List;
 
 public class UpdateDio {
 
-    @JSONField(name = "platform")
+    @SerializedName("platform")
     private String platform;
-    @JSONField(name = "channel")
+    @SerializedName("channel")
     private String channel;
-    @JSONField(name = "current_version")
+    @SerializedName("current_version")
     private String currentVersion;
-    @JSONField(name = "latest_version")
+    @SerializedName("latest_version")
     private String latestVersion;
-    @JSONField(name = "update_available")
+    @SerializedName("update_available")
     private Boolean updateAvailable;
-    @JSONField(name = "mandatory")
+    @SerializedName("mandatory")
     private Boolean mandatory;
-    @JSONField(name = "assets")
+    @SerializedName("assets")
     private AssetsDTO assets;
-    @JSONField(name = "release_notes")
+    @SerializedName("release_notes")
     private List<String> releaseNotes;
-    @JSONField(name = "released_at")
+    @SerializedName("released_at")
     private String releasedAt;
-    @JSONField(name = "server_time")
+    @SerializedName("server_time")
     private String serverTime;
 
     public String getPlatform() {
@@ -108,11 +108,11 @@ public class UpdateDio {
     }
 
     public static class AssetsDTO {
-        @JSONField(name = "url")
+        @SerializedName("url")
         private String url;
-        @JSONField(name = "size")
+        @SerializedName("size")
         private String size;
-        @JSONField(name = "sha256")
+        @SerializedName("sha256")
         private String sha256;
 
         public String getUrl() {

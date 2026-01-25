@@ -22,7 +22,6 @@ android {
         versionCode = 1
         versionName = "1.0.0"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         //assetPacks = [':assetsPackGameRes']
     }
 
@@ -57,9 +56,6 @@ dependencies {
     implementation(libs.material)
     implementation(libs.androidx.activity)
     implementation(libs.androidx.constraintlayout)
-    testImplementation(libs.junit)
-    androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation(libs.androidx.espresso.core)
 
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.6.2")
 
@@ -78,14 +74,13 @@ dependencies {
     implementation("com.github.AleynP:MVVMLin:2.0.0")
     implementation("com.google.code.gson:gson:2.10.1") // 使用最新版本
     implementation("com.squareup.okio:okio:1.15.0")
-    implementation("com.squareup.okhttp3:okhttp:3.14.2")
+    implementation("com.squareup.okhttp3:okhttp:4.9.3")
     implementation("com.blankj:utilcodex:1.31.1")
     // 基础依赖包，必须要依赖
     implementation("com.geyifeng.immersionbar:immersionbar:3.2.2")
 // kotlin扩展（可选）
     implementation("com.geyifeng.immersionbar:immersionbar-ktx:3.2.2")
     implementation ("org.sufficientlysecure:html-textview:4.0")
-    implementation ("com.alibaba:fastjson:1.2.24")
     implementation("com.eightbitlab:rxbus:1.0.2")
 
     val sqlite_version = "2.5.2"
