@@ -109,6 +109,7 @@ class WelcomeAct:BaseVMActivity<MainViewModel, ActWelcomeBinding>() {
             }*/
 
             startActivity(Intent(this@WelcomeAct, AppCategoryPage::class.java))
+            finish()
         }else{
             dialog?.let {
                 it.show()
@@ -124,14 +125,14 @@ class WelcomeAct:BaseVMActivity<MainViewModel, ActWelcomeBinding>() {
                     // 每隔 1 秒回调（主线程）
                     override fun onTick(millisUntilFinished: Long) {
                         val remainingSeconds = millisUntilFinished / 1000 // 剩余秒数
-
-                        // 可更新 UI（如按钮文字："剩余 $remainingSeconds 秒"）
-                        // btnVerify.text = "剩余 $remainingSeconds 秒"
+                        // 更新按钮文字显示倒计时
+                        tv_sure.text = "同意 ($remainingSeconds)"
                     }
 
                     // 倒计时结束回调
                     override fun onFinish() {
                         isCanClick = true
+                        tv_sure.text = "同意" // 倒计时结束，恢复按钮文字
                         tv_sure.solidColor = resources.getColor(R.color.colorAccent)
                         tv_sure.setTextColor(resources.getColor(R.color.white))
                         tv_sure.resetBackground()
@@ -144,9 +145,7 @@ class WelcomeAct:BaseVMActivity<MainViewModel, ActWelcomeBinding>() {
                     when(view.id){
                         R.id.tv_secret -> {
                             startActivity(Intent(this@WelcomeAct, AppCategoryPage::class.java))
-
-
-
+                            finish()
                         }
                         R.id.tv_cancel -> {
                             dialog.cancel()

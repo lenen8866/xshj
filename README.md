@@ -21,6 +21,7 @@ http://xshj.version.sdattg.com/BanBen/version/admin888.html
 
 ✅ 添加全部改动：
 git add .
+git add -A
 . 的意思：当前文件夹下全部改动
 ✅ 添加某一个文件：
 git add app/src/main/java/xxx.kt
