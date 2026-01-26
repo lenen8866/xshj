@@ -7,6 +7,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.book.reader.databinding.ChapterItemBinding
 import com.sda.books.reader.entity.Chapter
 import com.sda.books.reader.util.copyText
+import com.sda.books.reader.util.onClickWithDebounce
 
 class ChapterListAdapter :
     RecyclerView.Adapter<ChapterListAdapter.TextViewHolder>() {
@@ -69,9 +70,9 @@ class ChapterListAdapter :
         RecyclerView.ViewHolder(binding.root) {
 
         init {
-            // 设置点击事件
-            binding.root.setOnClickListener {
-                val position = adapterPosition
+            // ✅ 使用防抖点击，默认 500ms 防抖
+            binding.root.onClickWithDebounce(debounceInterval = 500L) {
+                val position = bindingAdapterPosition // ✅ 修复：使用 bindingAdapterPosition 替代 adapterPosition
                 if (position != RecyclerView.NO_POSITION) {
                     listener?.onItemClick(position, items[position])
                 }

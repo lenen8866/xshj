@@ -5,7 +5,10 @@
     android:layout_width="match_parent"
     android:layout_height="60dp"
     android:gravity="center_vertical"
-    android:orientation="vertical">
+    android:orientation="vertical"
+    android:background="@drawable/item_ripple_volume"
+    android:clickable="true"
+    android:focusable="true">
 
     <LinearLayout
         android:layout_width="match_parent"

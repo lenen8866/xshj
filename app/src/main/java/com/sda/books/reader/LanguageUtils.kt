@@ -3,6 +3,7 @@ package com.sda.books.reader
 import android.content.Context
 import android.content.res.Configuration
 import android.content.res.Resources
+import android.os.Build
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
 import java.util.Locale
@@ -38,9 +39,21 @@ object LanguageUtils {
      */
     fun getStringByLocale(context: Context, resId: Int, language: String, country: String?): String {
         val locale = if (country.isNullOrEmpty()) {
-            Locale(language)
+            // ✅ 修复：使用 Locale.Builder() 替代 Locale(String) 构造器
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                Locale.Builder().setLanguage(language).build()
+            } else {
+                @Suppress("DEPRECATION")
+                Locale(language)
+            }
         } else {
-            Locale(language, country)
+            // ✅ 修复：使用 Locale.Builder() 替代 Locale(String, String) 构造器
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                Locale.Builder().setLanguage(language).setRegion(country).build()
+            } else {
+                @Suppress("DEPRECATION")
+                Locale(language, country)
+            }
         }
 
         val resources = getResourcesForLocale(context, locale)
@@ -62,7 +75,14 @@ object LanguageUtils {
     // 获取指定语言的Resources对象
     private fun getResourcesForLanguage(context: Context, language: String): Resources {
         return resourcesCache.getOrPut(language) {
-            createResourcesForLocale(context, Locale(language))
+            // ✅ 修复：使用 Locale.Builder() 替代 Locale(String) 构造器
+            val locale = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                Locale.Builder().setLanguage(language).build()
+            } else {
+                @Suppress("DEPRECATION")
+                Locale(language)
+            }
+            createResourcesForLocale(context, locale)
         }
     }
 

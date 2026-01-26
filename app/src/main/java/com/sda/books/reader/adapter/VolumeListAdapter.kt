@@ -17,6 +17,7 @@ import com.sda.books.reader.entity.Volume
 import com.sda.books.reader.entity.getShowVolumeName
 import com.sda.books.reader.util.AppSettingUtil
 import com.sda.books.reader.util.copyText
+import com.sda.books.reader.util.onClickWithDebounce
 
 class VolumeListAdapter() :
     RecyclerView.Adapter<ViewHolder>() {
@@ -160,7 +161,8 @@ class VolumeListAdapter() :
         when (holder) {
             is VolumeViewHolder -> {
                 val item = items[position]
-                holder.itemView.setOnClickListener {
+                // ✅ 使用防抖点击，默认 500ms 防抖
+                holder.itemView.onClickWithDebounce(debounceInterval = 500L) {
                     listener?.onItemClick(position, item)
                 }
                 holder.itemView.setOnLongClickListener {

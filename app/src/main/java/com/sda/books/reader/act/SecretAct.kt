@@ -83,7 +83,9 @@ class SecretAct: BaseVMActivity<MainViewModel, ActSecretInfoBinding>() {
                 }
             }
 
-            @Deprecated("Deprecated in Java")
+            // ✅ 添加 @Suppress 抑制 Deprecated 警告（API < 24 仍需此方法）
+            @Deprecated("Deprecated in Java", ReplaceWith("shouldOverrideUrlLoading(view, request)"))
+            @Suppress("DEPRECATION")
             override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
                 url ?: return true
                 
@@ -118,8 +120,14 @@ class SecretAct: BaseVMActivity<MainViewModel, ActSecretInfoBinding>() {
 
     override fun onDestroy() {
         super.onDestroy()
-        mBinding.web.stopLoading()
-        mBinding.web.removeAllViews()
-        mBinding.web.destroy()
+        // ✅ 清理 WebView 资源
+        mBinding.web.apply {
+            stopLoading()
+            clearHistory()
+            clearCache(true)
+            loadUrl("about:blank")
+            removeAllViews()
+            destroy()
+        }
     }
 }

@@ -1,15 +1,14 @@
 package com.sda.books.reader.act
 
 import android.content.Intent
-import android.content.res.AssetManager
 import android.os.Bundle
 import android.os.CountDownTimer
 import android.view.Gravity
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.aleyn.mvvm.base.BaseVMActivity
 import com.ansen.shape.AnsenTextView
-import com.blankj.utilcode.util.FileUtils
 import com.blankj.utilcode.util.LogUtils
 import com.blankj.utilcode.util.SPUtils
 import com.blankj.utilcode.util.ToastUtils
@@ -20,180 +19,166 @@ import com.sda.books.reader.db.DatabaseHelper
 import com.sda.books.reader.model.MainViewModel
 import com.sda.books.reader.util.AssetsCopyManager
 import com.sda.books.reader.util.Constant
-
 import com.sda.books.reader.view.CustomDialog
 import kotlinx.coroutines.launch
 
 
-class WelcomeAct:BaseVMActivity<MainViewModel, ActWelcomeBinding>() {
+class WelcomeAct : BaseVMActivity<MainViewModel, ActWelcomeBinding>() {
+    
     private var dialog: CustomDialog? = null
-    private var isCanClick = false
-    val DB_NAME = "xshj.db"
-    private lateinit var copyManager: AssetsCopyManager
-    private var isFinish = false
+    private var countDownTimer: CountDownTimer? = null
+    private var hasNavigated = false // 防止重复跳转
+    private var isDbReady = false // DB 是否就绪
+    private var hasAgreed = false // 是否已同意协议
+    
     override fun initData() {
-        copyManager = AssetsCopyManager(applicationContext)
-
-        // 示例：复制 assets 下的 test.txt 到应用外部缓存目录
-        //val assetsFilePath = "test.txt" // assets 根目录下的 test.txt
-        val assetsFilePath = DB_NAME
-        val targetFilePath = this.getDatabasePath(DatabaseHelper.Companion.DB_NAME).path
-        lifecycleScope.launch {
-            LogUtils.e("复制进度===========>>>>>>${!SPUtils.getInstance().getBoolean("copyFinish",false)}")
-            if(!SPUtils.getInstance().getBoolean("copyFinish",false)){
-                copyManager.copyFile(assetsFilePath, targetFilePath,
-                    object : AssetsCopyManager.CopyProgressCallback {
-                        override fun onProgress(progress: Float) {
-                            // 进度：0.0 ~ 1.0，可乘以 100 转为百分比
-                            val progressPercent = (progress * 100).toInt()
-                            println("复制进度：$progressPercent%")
-                            // 这里可以更新 UI，比如进度条：progressBar.progress = progressPercent
-                        }
-
-                        override fun onComplete() {
-                            println("文件复制完成！目标路径：$targetFilePath")
-                            // /data/user/0/com.sda.books.reader/databases/xshj.db
-                            // /data/user/0/com.sda.books.reader/databases/xshj.db
-                            isFinish = true
-                            SPUtils.getInstance().put("copyFinish",true)
-                            LogUtils.e("===========>>>>>>${dialog?.isShowing}")
-                            ToastUtils.showLong("数据加载完成")
-                            if(SPUtils.getInstance().getBoolean(Constant.isFirst,false)){
-                                startActivity(Intent(this@WelcomeAct, AppCategoryPage::class.java))
-                                finish()
-                            }else{
-
-                            }
-                        }
-
-                        override fun onError(e: Exception) {
-                            println("复制失败：${e.message}")
-                            e.printStackTrace()
-                        }
-                    }
-                )
-            }
-
-         }
-
-
-        if( SPUtils.getInstance().getBoolean(Constant.isFirst,false)){
-           /* lifecycleScope.launch {
-                if(!SPUtils.getInstance().getBoolean("copyFinish",false)){
-                    copyManager.copyFile(assetsFilePath, targetFilePath,
-                        object : AssetsCopyManager.CopyProgressCallback {
-                            override fun onProgress(progress: Float) {
-                                // 进度：0.0 ~ 1.0，可乘以 100 转为百分比
-                                val progressPercent = (progress * 100).toInt()
-                                println("复制进度：$progressPercent%")
-                                // 这里可以更新 UI，比如进度条：progressBar.progress = progressPercent
-                            }
-
-                            override fun onComplete() {
-                                println("文件复制完成！目标路径：$targetFilePath")
-
-                                SPUtils.getInstance().put("copyFinish",true)
-                                dismissLoading()
-                                startActivity(Intent(this@WelcomeAct, AppCategoryPage::class.java))
-                            }
-
-                            override fun onError(e: Exception) {
-                                println("复制失败：${e.message}")
-                                e.printStackTrace()
-                            }
-                        }
-                    )
-                }else{
-                    startActivity(Intent(this@WelcomeAct, AppCategoryPage::class.java))
-                }
-            }*/
-
-            startActivity(Intent(this@WelcomeAct, AppCategoryPage::class.java))
-            finish()
-        }else{
-            dialog?.let {
-                it.show()
-
-
-                var viewList = it.views
-                var tv_secret = viewList[0] as TextView
-                var tv_cancel = viewList[1] as AnsenTextView
-                var tv_sure = viewList[2] as AnsenTextView
-                tv_sure.solidColor = this.resources.getColor(R.color.color_999)
-                tv_sure.resetBackground()
-                val countDownTimer = object : CountDownTimer(3 * 1000, 1000) {
-                    // 每隔 1 秒回调（主线程）
-                    override fun onTick(millisUntilFinished: Long) {
-                        val remainingSeconds = millisUntilFinished / 1000 // 剩余秒数
-                        // 更新按钮文字显示倒计时
-                        tv_sure.text = "同意 ($remainingSeconds)"
-                    }
-
-                    // 倒计时结束回调
-                    override fun onFinish() {
-                        isCanClick = true
-                        tv_sure.text = "同意" // 倒计时结束，恢复按钮文字
-                        tv_sure.solidColor = resources.getColor(R.color.colorAccent)
-                        tv_sure.setTextColor(resources.getColor(R.color.white))
-                        tv_sure.resetBackground()
-                    }
-                }
-
-// 启动倒计时（关键：调用 start() 才会开始）
-                countDownTimer.start()
-                it.setOnDialogItemClickListener { dialog, view ->
-                    when(view.id){
-                        R.id.tv_secret -> {
-                            startActivity(Intent(this@WelcomeAct, AppCategoryPage::class.java))
-                            finish()
-                        }
-                        R.id.tv_cancel -> {
-                            dialog.cancel()
-                            finish()
-                        }
-                        R.id.tv_sure -> {
-                            if(!isCanClick){
-                                return@setOnDialogItemClickListener
-                            }
-                            dialog.cancel()
-                            SPUtils.getInstance().put(Constant.isFirst,true)
-                            if(isFinish){
-                                startActivity(Intent(this@WelcomeAct, AppCategoryPage::class.java))
-                                finish()
-                            }else{
-                                //showLoading()
-                                ToastUtils.showLong("数据加载中....")
-                            }
-
-
-                        }
-                    }
-                }
-            }
+        // 启动 DB 复制
+        startDbCopy()
+        
+        // 已同意过协议，直接等 DB 就绪后进首页
+        if (SPUtils.getInstance().getBoolean(Constant.isFirst, false)) {
+            hasAgreed = true
+            checkAndNavigate()
+        } else {
+            // 首次启动，显示协议弹窗
+            showPrivacyDialog()
         }
-
     }
 
     override fun initView(savedInstanceState: Bundle?) {
         dialog = CustomDialog(
             this,
             R.layout.dialog_secret_text,
-            intArrayOf(
-                R.id.tv_secret,
-                R.id.tv_cancel,
-                R.id.tv_sure),
-            0,
-            false,
-            false,
-            Gravity.CENTER
+            intArrayOf(R.id.tv_secret, R.id.tv_cancel, R.id.tv_sure),
+            0, false, false, Gravity.CENTER
         )
-
-
-
-
-
     }
 
-    override val layoutId: Int
-        get() = R.layout.act_welcome
+    /**
+     * 启动数据库复制
+     */
+    private fun startDbCopy() {
+        if (SPUtils.getInstance().getBoolean("copyFinish", false)) {
+            isDbReady = true
+            return
+        }
+        
+        lifecycleScope.launch {
+            val targetPath = getDatabasePath(DatabaseHelper.DB_NAME).path
+            AssetsCopyManager(applicationContext).copyFile(
+                "xshj.db", targetPath,
+                object : AssetsCopyManager.CopyProgressCallback {
+                    override fun onProgress(progress: Float) {}
+                    
+                    override fun onComplete() {
+                        isDbReady = true
+                        SPUtils.getInstance().put("copyFinish", true)
+                        ToastUtils.showShort("数据加载完成")
+                        checkAndNavigate()
+                    }
+                    
+                    override fun onError(e: Exception) {
+                        LogUtils.e("WelcomeAct", "DB复制失败: ${e.message}")
+                        ToastUtils.showLong("数据加载失败，请重启应用")
+                    }
+                }
+            )
+        }
+    }
+
+    /**
+     * 显示隐私协议弹窗
+     */
+    private fun showPrivacyDialog() {
+        dialog?.show()
+        val views = dialog?.views ?: return
+        val tvSecret = views[0] as TextView
+        val tvCancel = views[1] as AnsenTextView
+        val tvSure = views[2] as AnsenTextView
+        
+        // ✅ 修复：使用 ContextCompat.getColor() 替代 Resources.getColor()
+        // 初始化同意按钮（灰色不可点击）
+        tvSure.apply {
+            solidColor = ContextCompat.getColor(this@WelcomeAct, R.color.color_999)
+            setTextColor(ContextCompat.getColor(this@WelcomeAct, R.color.white))
+            resetBackground()
+            text = "同意 (3)"
+        }
+        
+        // 3秒倒计时
+        var canClick = false
+        countDownTimer = object : CountDownTimer(3000, 1000) {
+            override fun onTick(millis: Long) {
+                tvSure.text = "同意 (${millis / 1000})"
+            }
+            
+            override fun onFinish() {
+                canClick = true
+                tvSure.apply {
+                    text = "同意"
+                    solidColor = ContextCompat.getColor(this@WelcomeAct, R.color.colorAccent)
+                    setTextColor(ContextCompat.getColor(this@WelcomeAct, R.color.white))
+                    resetBackground()
+                }
+            }
+        }.also { it.start() }
+        
+        // 按钮点击事件
+        dialog?.setOnDialogItemClickListener { dlg, view ->
+            when (view.id) {
+                R.id.tv_secret -> {
+                    // 打开隐私政策页面
+                    startActivity(Intent(this, SecretAct::class.java))
+                }
+                R.id.tv_cancel -> {
+                    dlg.cancel()
+                    finish()
+                }
+                R.id.tv_sure -> {
+                    if (!canClick) return@setOnDialogItemClickListener
+                    
+                    dlg.cancel()
+                    hasAgreed = true
+                    SPUtils.getInstance().put(Constant.isFirst, true)
+                    
+                    if (isDbReady) {
+                        navigateToHome()
+                    } else {
+                        ToastUtils.showLong("数据加载中，请稍候...")
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 检查条件并导航（DB就绪 + 已同意 = 进首页）
+     */
+    private fun checkAndNavigate() {
+        if (hasAgreed && isDbReady) {
+            navigateToHome()
+        }
+    }
+
+    /**
+     * 导航到首页（只执行一次）
+     */
+    private fun navigateToHome() {
+        if (hasNavigated) return
+        hasNavigated = true
+        
+        Intent(this, AppCategoryPage::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            startActivity(this)
+        }
+        finish()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        countDownTimer?.cancel()
+        dialog?.dismiss()
+    }
+
+    override val layoutId: Int get() = R.layout.act_welcome
 }
