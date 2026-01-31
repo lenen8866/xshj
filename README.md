@@ -1,5 +1,9 @@
 # 信使汇集_安卓
 ### 后台版本测试
+如果我给你db文件，那么你需要 改为这个名字"xshj.db"
+
+
+而这个是测试更新的，非修改人员无需改动（改动也没用.）
 http://xshj.version.sdattg.com/BanBen/version/admin888.html
 “执行方案”写得接近工程级 SOP了
 #### 介绍
