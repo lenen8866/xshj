@@ -1,0 +1,29 @@
+<resources>
+    <string name="app_name">信使汇集</string>
+    <string name="setting">设置</string>
+
+    <string name="language">语言</string>
+    <string name="chinese_english_comparison">中英文对照</string>
+    <string name="about_us">关于我们</string>
+    <string name="secret_title">隐私政策</string>
+    <string name="update_db">选择数据库</string>
+    <string name="content_setting">内容设置</string>
+    <string name="Size">文字大小:</string>
+    <string name="text_spacing">文字间距:</string>
+    <string name="text_frist_spacing">首行缩进:</string>
+    <string name="text_section_height_spacing">段高间距:</string>
+    <string name="screen_pitch">屏幕间距:</string>
+    <string name="theme">主题:</string>
+    <string name="preview_effect">预览效果</string>
+    <string name="confirm_the_modification">确定修改</string>
+    <string name="restore_the_default">恢复默认</string>
+    <string name="row_height_spacing">行高间距:</string>
+    <string name="search_bible">搜索“%s”关键词！</string>
+    <string name="search_bible_hint1" translatable="false">%s</string>
+    <string name="copy" translatable="false">复制</string>
+    <string name="select_all" translatable="false">全选</string>
+    <string name="toast_msg1" translatable="false">对不起，缺少书籍。</string>
+    <string name="toast_msg2">已经到底部了</string>
+    <string name="pre" translatable="false">这里是内容效果预览区域,在这里设置的效果,直接影响到阅读文字..\n这里是内容效果预览区域,在这里设置
+的效果,直接影响到阅读文字..</string>
+</resources>

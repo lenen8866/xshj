@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="vertical">
+
+    <ImageView
+        android:id="@+id/iv_img"
+        app:layout_constraintWidth_percent="0.8"
+        android:layout_width="0dp"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        android:layout_height="wrap_content"/>
+
+    <!-- 使用原生 TextView，启用文本选择 -->
+    <TextView
+        android:id="@+id/tv_content"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="18sp"
+        android:textColor="#FF666666"
+        android:textIsSelectable="true"
+        android:longClickable="true"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        tools:text="示例文本，长按可以选择和复制" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

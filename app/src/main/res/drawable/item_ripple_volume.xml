@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 书籍列表 Item 点击效果：Ripple + 按压态 -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="#10000000"> <!-- ✅ 调浅：波纹颜色（原 #20000000 → #10000000） -->
+
+    <!-- 按压态背景（点击时显示的颜色） -->
+    <item android:id="@android:id/background">
+        <selector>
+            <item android:state_pressed="true">
+                <shape android:shape="rectangle">
+                    <solid android:color="#08000000" /> <!-- ✅ 调浅：按压时背景（原 #10000000 → #08000000） -->
+                </shape>
+            </item>
+            <item>
+                <shape android:shape="rectangle">
+                    <solid android:color="@android:color/transparent" /> <!-- 默认透明 -->
+                </shape>
+            </item>
+        </selector>
+    </item>
+
+</ripple>
