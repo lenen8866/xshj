@@ -107,8 +107,54 @@ class AppSearchAllFileResultPage : BaseActivity() {
 
     }
 
-    fun isAllEnglish(text: String): Boolean {
-        return text.matches("^[a-zA-Z\\x20-\\x7E]+$".toRegex())
+    private fun hasEnglish(text: String): Boolean {
+        return text.any { it in 'A'..'Z' || it in 'a'..'z' }
+    }
+    
+    /**
+     * 检查文本中是否包含独立的单个字母（不在单词内部）
+     * @param text 要检查的文本
+     * @param letter 要查找的字母（会同时匹配大小写）
+     * @return 如果找到独立的字母则返回 true
+     */
+    private fun containsStandaloneLetter(text: String, letter: Char): Boolean {
+        val lowerLetter = letter.lowercaseChar()
+        val upperLetter = letter.uppercaseChar()
+        
+        for (i in text.indices) {
+            val c = text[i]
+            if (c == lowerLetter || c == upperLetter) {
+                val prevChar = if (i > 0) text[i - 1] else ' '
+                val prevIsEnglishLetter = prevChar in 'A'..'Z' || prevChar in 'a'..'z'
+                val nextChar = if (i < text.length - 1) text[i + 1] else ' '
+                val nextIsEnglishLetter = nextChar in 'A'..'Z' || nextChar in 'a'..'z'
+                if (!prevIsEnglishLetter && !nextIsEnglishLetter) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+    
+    /**
+     * 检查文本中是否包含完整英文单词（忽略大小写，必须是完整单词）
+     */
+    private fun containsWholeWordIgnoreCase(text: String, word: String): Boolean {
+        if (word.isBlank()) return false
+        val lowerText = text.lowercase()
+        val lowerWord = word.lowercase()
+        var start = 0
+        while (true) {
+            val idx = lowerText.indexOf(lowerWord, start)
+            if (idx == -1) return false
+            val before = if (idx > 0) text[idx - 1] else ' '
+            val afterIndex = idx + word.length
+            val after = if (afterIndex < text.length) text[afterIndex] else ' '
+            val beforeIsLetter = before in 'A'..'Z' || before in 'a'..'z'
+            val afterIsLetter = after in 'A'..'Z' || after in 'a'..'z'
+            if (!beforeIsLetter && !afterIsLetter) return true
+            start = idx + word.length
+        }
     }
 
     private suspend fun searchDatabase(
@@ -128,20 +174,20 @@ class AppSearchAllFileResultPage : BaseActivity() {
 
             val contentList = getChapterContentShowList(chapter.content)
             contentList.forEachIndexed { index, matchContent ->
-                var isAllContains = true
-                for (item in searchContentList) {
-                    if(isAllEnglish(item)){
-                        if (!matchContent.getShowContent().contains(item+" ")) {
-                            isAllContains = false
-                            break
-                        }
-                    }else{
-                        if (!matchContent.getShowContent().contains(item)) {
-                            isAllContains = false
-                            break
+                val lineText = matchContent.getShowContent()
+                val isAllContains = searchContentList.all { item ->
+                    if (item.isBlank()) return@all false
+                    val isSingleLetter = item.length == 1 && (item[0] in 'a'..'z' || item[0] in 'A'..'Z')
+                    if (isSingleLetter) {
+                        containsStandaloneLetter(lineText, item[0])
+                    } else {
+                        val hasEn = hasEnglish(item)
+                        if (hasEn) {
+                            containsWholeWordIgnoreCase(lineText, item)
+                        } else {
+                            lineText.contains(item, ignoreCase = true)
                         }
                     }
-
                 }
 
 
@@ -185,15 +231,7 @@ class AppSearchAllFileResultPage : BaseActivity() {
         hasMore = true
         isLoading = true
         adapter.clearData()
-        var list = ArrayList<String>()
-        if(isAllEnglish(searchContent)){
-            list.add(searchContent)
-        }else{
-            searchContent.split(" ").filter {
-                list.add(it)
-            }
-        }
-
+        val list = searchContent.split(" ").filter { it.isNotBlank() }
         adapter.updateMatchList(list)
         loadingDialog.show()
 

@@ -48,7 +48,9 @@ class ChapterPage : BaseActivity() {
         private const val EXTRA_SCROLL_INDEX = "scrollIndex"
         private const val EXTRA_TABS = "tabs"
         private const val EXTRA_MATCH_CONTENT = "matchContent"
-        
+        private const val EXTRA_TARGET_LINE_TEXT = "targetLineText"
+        private const val EXTRA_TEMP_CONTENT_MODE = "tempContentMode"
+
         fun start(
             activity: Activity,
             volumeTitle: String,
@@ -57,6 +59,8 @@ class ChapterPage : BaseActivity() {
             scrollIndex: Int = 0,
             tabs: String,
             matchContent: ArrayList<String> = arrayListOf(),
+            targetLineText: String = "",
+            tempContentMode: Int = -1,
         ) {
             activity.startActivity(Intent(activity, ChapterPage::class.java).apply {
                 putExtra(EXTRA_VOLUME_TITLE, volumeTitle)
@@ -65,6 +69,8 @@ class ChapterPage : BaseActivity() {
                 putExtra(EXTRA_SCROLL_INDEX, scrollIndex)
                 putExtra(EXTRA_TABS, tabs)
                 putStringArrayListExtra(EXTRA_MATCH_CONTENT, matchContent)
+                putExtra(EXTRA_TARGET_LINE_TEXT, targetLineText)
+                putExtra(EXTRA_TEMP_CONTENT_MODE, tempContentMode)
             })
         }
     }
@@ -79,6 +85,8 @@ class ChapterPage : BaseActivity() {
     var scrollIndex = 0
     var stopLineCount = 0
     var totalLineCount = 0
+    private var targetLineText: String = ""
+    private var tempContentMode: Int = -1
     override fun getRootView(): View {
         return binding.root
     }
@@ -90,12 +98,14 @@ class ChapterPage : BaseActivity() {
         tabs = intent.getStringExtra(EXTRA_TABS) ?: ""
         chapterId = intent.getIntExtra(EXTRA_CHAPTER_ID, -1)
         scrollIndex = intent.getIntExtra(EXTRA_SCROLL_INDEX, 0)
-        
+        targetLineText = intent.getStringExtra(EXTRA_TARGET_LINE_TEXT) ?: ""
+        tempContentMode = intent.getIntExtra(EXTRA_TEMP_CONTENT_MODE, -1)
+
         // 日志：记录接收到的参数
         LogUtils.e("ChapterPage: onCreate接收参数, chapterId=$chapterId, chapterTitle=$chapterTitle, intentTabs=$tabs")
         // 根据内容显示模式调整 scrollIndex
         // contentMode: 0=中, 1=双, 2=EN
-        val contentMode = AppSettingUtil.getContentMode()
+        val contentMode = if (tempContentMode >= 0) tempContentMode else AppSettingUtil.getContentMode()
         if (contentMode == 0) {
             // 中文模式：双语内容会被过滤，需要调整索引
             scrollIndex = (scrollIndex + 1) / 2
@@ -168,7 +178,10 @@ class ChapterPage : BaseActivity() {
         lifecycleScope.launch {
             EventBus.chapterHeightFlow.collectLatest { height ->
                 if (scrollIndex > 0 && totalLineCount > 0) {
-                    binding.chapterContentList.smoothScrollBy(0, (stopLineCount * height / totalLineCount))
+                    // 让目标尽量落在屏幕中间：在原有滚动距离基础上减去半屏高度
+                    val viewportHalf = (binding.chapterContentList.height / 2f).toInt()
+                    val dy = (stopLineCount * height / totalLineCount) - viewportHalf
+                    binding.chapterContentList.smoothScrollBy(0, dy.coerceAtLeast(0))
                 }
             }
         }
@@ -328,114 +341,97 @@ class ChapterPage : BaseActivity() {
                     if (music.isNotEmpty()) {
                         initializePlayer(music)
                     }
-                    val chapterContentItemList = getChapterContentShowList(content)
-                    // 纠偏：由于数据源拼接/双语过滤等原因，scrollIndex 可能和实际段落 index 存在偏移
-                    // 这里在 scrollIndex 附近找“真正包含关键词”的段落作为唯一高亮目标
-                    val highlightIndex = run {
-                        if (matchContent.isEmpty() || chapterContentItemList.isEmpty()) {
-                            scrollIndex
-                        } else {
-                            val window = 20
-                            val start = (scrollIndex - window).coerceAtLeast(0)
-                            val end = (scrollIndex + window).coerceAtMost(chapterContentItemList.lastIndex)
-
-                            var bestIndex = scrollIndex.coerceIn(0, chapterContentItemList.lastIndex)
-                            var bestDistance = Int.MAX_VALUE
-
-                            for (i in start..end) {
-                                val txt = chapterContentItemList[i].getShowContent()
-                                if (txt.isBlank()) continue
-                                val hit = matchContent.all { key ->
-                                    val k = key.trim()
-                                    if (k.isEmpty()) true else txt.contains(k, ignoreCase = true)
-                                }
-                                if (hit) {
-                                    val d = kotlin.math.abs(i - scrollIndex)
-                                    if (d < bestDistance) {
-                                        bestDistance = d
-                                        bestIndex = i
-                                        if (d == 0) break
-                                    }
-                                }
-                            }
-                            bestIndex
-                        }
+                    val modeToUse = if (tempContentMode >= 0) tempContentMode else AppSettingUtil.getContentMode()
+                    val chapterContentItemList = getChapterContentShowList(content, modeToUse)
+                    // 精准定位：
+                    // - 优先使用"点击的那一行原文(targetLineText)"在章节内容中定位
+                    // - 找不到时才退回使用 scrollIndex（老逻辑）
+                    fun normalizeForMatch(s: String): String {
+                        return s.replace("*", "").trim()
                     }
-                    val nData = mutableListOf<ChapterContentItem>()
-                    // 段落间距：中文模式下只保留 1 行空行，其它模式按设置值
-                    val contentMode = AppSettingUtil.getContentMode()
-                    val sectionSpace = AppSettingUtil.getTextSectionHLetterSpacing()
-                    val brCount = if (contentMode == 0) 1 else sectionSpace.coerceAtLeast(1)
-                    val pHeight = "<br>".repeat(brCount)
-                    
-                    var insertContent = ""
-                    var insertChapterContentItem = ChapterContentItem()
-                    for (index in 0 until chapterContentItemList.size) {
-                        if (chapterContentItemList[index].isImg()) {
-                            if (insertContent != "") {
-                                var insertChapterContentItem1 = ChapterContentItem()
-                                insertChapterContentItem1.setUserContent(insertContent)
-                                //insertChapterContentItem1.isCn() = true
 
-                                nData.add(insertChapterContentItem1)
-                            }
-
-                            nData.add(chapterContentItemList[index])
-                            insertContent = ""
+                    val targetIndexForScroll = run {
+                        if (chapterContentItemList.isEmpty()) {
+                            0
                         } else {
+                            val hint = scrollIndex.coerceIn(0, chapterContentItemList.lastIndex)
+                            val target = normalizeForMatch(targetLineText)
 
-                            if (chapterContentItemList[index].getShowContent()
-                                    .contains(".mp3")
-                            ) {
-
-                            } else {
-                                val  strTxt = chapterContentItemList[index].getShowContent()
-
-
-                                var   vFristSpace = AppSettingUtil.getTextFristLetterSpacing()
-                                var indentSpaces = "\u3000".repeat(vFristSpace) // 全角空格
-                                if(strTxt.startsWith("*")){
-                                    indentSpaces = ""
+                            if (target.isNotBlank()) {
+                                // 先精确匹配整行，再用 contains 做弱匹配
+                                val exact = chapterContentItemList.indices.filter { i ->
+                                    normalizeForMatch(chapterContentItemList[i].getShowContent()) == target
+                                }
+                                val candidates = if (exact.isNotEmpty()) exact else chapterContentItemList.indices.filter { i ->
+                                    normalizeForMatch(chapterContentItemList[i].getShowContent()).contains(target)
                                 }
 
-                                // 搜索结果跳转到内容页：只展示“本次点击”对应的命中点高亮
-                                // 其它命中结果不再显示（仅保留 highlightIndex 这一条的高亮/提示）
-                                // 搜索结果跳转到内容页：只展示"本次点击"对应的命中点高亮
-                                val processedText = if (matchContent.isNotEmpty() && index == highlightIndex) {
-                                    processTextHighlight(strTxt, matchContent, true)
+                                if (candidates.isNotEmpty()) {
+                                    candidates.minBy { i -> kotlin.math.abs(i - hint) }
                                 } else {
-                                    strTxt.replace("*", "")
+                                    hint
                                 }
-                                insertContent += "$indentSpaces$processedText$pHeight"
+                            } else {
+                                hint
+                            }
+                        }
+                    }
 
-                                //insertContent += "$indentSpaces${chapterContentItemList[index].getShowContent()}<br>"
+                    // 只高亮"本次点击"对应的命中点，并以其作为滚动基准
+                    val highlightIndex = targetIndexForScroll
+                    scrollIndex = targetIndexForScroll
+                    val nData = mutableListOf<ChapterContentItem>()
+                    var targetIndexInNData = 0
 
-                                // 计算行数（用于滚动定位）
-                                if (matchContent.isNotEmpty()) {
-                                    val content = chapterContentItemList[index].getShowContent()
-                                    val lineCount = calculateLineCount(content)
-                                    
-                                    if (index <= scrollIndex) {
-                                        stopLineCount += lineCount
-                                    }
-                                    totalLineCount += lineCount
-                                }
+                    for (index in 0 until chapterContentItemList.size) {
+                        val item = chapterContentItemList[index]
+                        if (item.isImg()) {
+                            nData.add(item)
+                        } else {
+                            val strTxt = item.getShowContent()
+                            if (strTxt.contains(".mp3")) {
+                                continue
                             }
 
+                            val vFristSpace = AppSettingUtil.getTextFristLetterSpacing()
+                            var indentSpaces = "\u3000".repeat(vFristSpace) // 全角空格
+                            if (strTxt.startsWith("*")) {
+                                indentSpaces = ""
+                            }
+
+                            // 搜索结果跳转到内容页：只展示"本次点击"对应的命中点高亮
+                            val processedText = if (matchContent.isNotEmpty() && index == highlightIndex) {
+                                processTextHighlight(strTxt, matchContent, true)
+                            } else {
+                                strTxt.replace("*", "")
+                            }
+
+                            item.setUserContent("$indentSpaces$processedText")
+                            nData.add(item)
+                        }
+                        
+                        // 记录目标行在 nData 中的索引
+                        if (index == highlightIndex) {
+                            targetIndexInNData = nData.size - 1
                         }
 
-                        if (index == chapterContentItemList.size - 1){
-                            insertChapterContentItem.setUserContent(insertContent)
-                            nData.add(insertChapterContentItem)
+                        // 计算行数（用于滚动定位 - 老逻辑保留，但现在精准定位优先）
+                        if (matchContent.isNotEmpty()) {
+                            val content = item.getShowContent()
+                            val lineCount = calculateLineCount(content)
+                            if (index <= scrollIndex) {
+                                stopLineCount += lineCount
+                            }
+                            totalLineCount += lineCount
                         }
-
                     }
+                    
                     // 更新适配器数据
                     adapter.updateData(nData)
 
                     // 滚动到目标位置
                     if (matchContent.isNotEmpty()) {
-                        scrollToSearchResult(nData)
+                        scrollToSearchResult(nData, targetIndexInNData)
                     } else if (scrollIndex > 0) {
                         lifecycleScope.launch {
                             delay(500)
@@ -450,23 +446,16 @@ class ChapterPage : BaseActivity() {
     /**
      * 滚动到搜索结果位置
      */
-    private fun scrollToSearchResult(nData: List<ChapterContentItem>) {
+    private fun scrollToSearchResult(nData: List<ChapterContentItem>, targetIndexInNData: Int) {
         binding.chapterContentList.post {
             lifecycleScope.launch {
                 delay(300)
                 
-                val targetIndex = nData.indexOfFirst { item ->
-                    val txt = item.getUserContent()
-                    txt.isNotBlank() && matchContent.all { key ->
-                        val k = key.trim()
-                        k.isEmpty() || txt.contains(k, ignoreCase = true)
-                    }
-                }.takeIf { it >= 0 } ?: 0
-                
                 val layoutManager = binding.chapterContentList.layoutManager as? LinearLayoutManager
-                if (layoutManager != null && targetIndex in 0 until adapter.itemCount) {
-                    layoutManager.scrollToPositionWithOffset(targetIndex, binding.root.height / 4)
-                    adapter.highlightPosition(targetIndex)
+                if (layoutManager != null && targetIndexInNData in 0 until adapter.itemCount) {
+                    // 尽量把目标放在屏幕中间附近，避免顶到屏幕导致看不到上下文
+                    layoutManager.scrollToPositionWithOffset(targetIndexInNData, binding.chapterContentList.height / 2)
+                    adapter.highlightPosition(targetIndexInNData)
                 }
             }
         }
@@ -591,19 +580,167 @@ class ChapterPage : BaseActivity() {
             .autoDarkModeEnable(true)
             .init()
     }
+    
     /**
-     * 检查文本是否包含单词（忽略大小写，单词边界）
+     * 检查文本中是否包含独立的单个字母（不在单词内部）
+     * @param text 要检查的文本
+     * @param letter 要查找的字母（会同时匹配大小写）
+     * @return 如果找到独立的字母则返回 true
      */
-    private fun containsWordIgnoreCase(text: String, word: String): Boolean {
-        val regex = Regex("""\b${Regex.escape(word)}\b""", RegexOption.IGNORE_CASE)
-        return regex.containsMatchIn(text)
+    private fun containsStandaloneLetter(text: String, letter: Char): Boolean {
+        val lowerLetter = letter.lowercaseChar()
+        val upperLetter = letter.uppercaseChar()
+        
+        for (i in text.indices) {
+            val c = text[i]
+            if (c == lowerLetter || c == upperLetter) {
+                val prevChar = if (i > 0) text[i - 1] else ' '
+                val prevIsEnglishLetter = prevChar in 'A'..'Z' || prevChar in 'a'..'z'
+                val nextChar = if (i < text.length - 1) text[i + 1] else ' '
+                val nextIsEnglishLetter = nextChar in 'A'..'Z' || nextChar in 'a'..'z'
+                
+                if (!prevIsEnglishLetter && !nextIsEnglishLetter) {
+                    return true
+                }
+            }
+        }
+        return false
     }
     
     /**
-     * 高亮单词（忽略大小写，单词边界）
+     * 检查文本是否包含关键词（区分大小写，单个字母启用单词边界）
+     */
+    private fun containsWordIgnoreCase(text: String, word: String): Boolean {
+        if (word.length == 1 && (word[0] in 'a'..'z' || word[0] in 'A'..'Z')) {
+            return containsStandaloneLetter(text, word[0])
+        }
+        return text.contains(word)
+    }
+    
+    /**
+     * 高亮独立的单个字母（不在单词内部的字母，大小写都高亮）
+     */
+    private fun highlightStandaloneLetter(text: String, letter: Char): String {
+        val lowerLetter = letter.lowercaseChar()
+        val upperLetter = letter.uppercaseChar()
+        val result = StringBuilder()
+        
+        var i = 0
+        while (i < text.length) {
+            // 跳过已有的 HTML 标签
+            if (text.startsWith("<font", i)) {
+                val endIdx = text.indexOf("</font>", i)
+                if (endIdx != -1) {
+                    result.append(text.substring(i, endIdx + 7))
+                    i = endIdx + 7
+                    continue
+                }
+            }
+            
+            val c = text[i]
+            if (c == lowerLetter || c == upperLetter) {
+                val prevChar = if (i > 0) text[i - 1] else ' '
+                val prevIsEnglishLetter = prevChar in 'A'..'Z' || prevChar in 'a'..'z'
+                val nextChar = if (i < text.length - 1) text[i + 1] else ' '
+                val nextIsEnglishLetter = nextChar in 'A'..'Z' || nextChar in 'a'..'z'
+                
+                if (!prevIsEnglishLetter && !nextIsEnglishLetter) {
+                    result.append("<font color='red'>$c</font>")
+                } else {
+                    result.append(c)
+                }
+            } else {
+                result.append(c)
+            }
+            i++
+        }
+        return result.toString()
+    }
+
+    /**
+     * 高亮完整英文单词（忽略大小写，必须是完整单词）
+     */
+    private fun highlightWholeWordIgnoreCase(text: String, word: String): String {
+        if (word.isBlank()) return text
+        
+        val lowerWord = word.lowercase()
+        val result = StringBuilder()
+        var i = 0
+        
+        while (i < text.length) {
+            // 跳过已有的 HTML 标签
+            if (text.startsWith("<font", i)) {
+                val endIdx = text.indexOf("</font>", i)
+                if (endIdx != -1) {
+                    result.append(text.substring(i, endIdx + 7))
+                    i = endIdx + 7
+                    continue
+                }
+            }
+            
+            // 动态获取当前位置的小写文本（不包含已处理部分）
+            val remainingText = text.substring(i)
+            val lowerRemainingText = remainingText.lowercase()
+            val idx = lowerRemainingText.indexOf(lowerWord)
+            
+            if (idx == -1) {
+                result.append(remainingText)
+                break
+            }
+            
+            // 计算在原文本中的实际位置
+            val actualIdx = i + idx
+            val before = if (actualIdx > 0) text[actualIdx - 1] else ' '
+            val afterIndex = actualIdx + word.length
+            val after = if (afterIndex < text.length) text[afterIndex] else ' '
+            val beforeIsLetter = before in 'A'..'Z' || before in 'a'..'z'
+            val afterIsLetter = after in 'A'..'Z' || after in 'a'..'z'
+            
+            if (!beforeIsLetter && !afterIsLetter) {
+                // 找到完整单词，高亮
+                result.append(remainingText.substring(0, idx))
+                result.append("<font color='red'>")
+                result.append(text.substring(actualIdx, actualIdx + word.length))
+                result.append("</font>")
+                i = actualIdx + word.length
+            } else {
+                // 不是完整单词，继续查找
+                result.append(remainingText.substring(0, idx + 1))
+                i = actualIdx + 1
+            }
+        }
+        return result.toString()
+    }
+
+    /**
+     * 检查是否包含完整英文单词（忽略大小写，必须是完整单词）
+     */
+    private fun containsWholeWordIgnoreCase(text: String, word: String): Boolean {
+        if (word.isBlank()) return false
+        val lowerText = text.lowercase()
+        val lowerWord = word.lowercase()
+        var start = 0
+        while (true) {
+            val idx = lowerText.indexOf(lowerWord, start)
+            if (idx == -1) return false
+            val before = if (idx > 0) text[idx - 1] else ' '
+            val afterIndex = idx + word.length
+            val after = if (afterIndex < text.length) text[afterIndex] else ' '
+            val beforeIsLetter = before in 'A'..'Z' || before in 'a'..'z'
+            val afterIsLetter = after in 'A'..'Z' || after in 'a'..'z'
+            if (!beforeIsLetter && !afterIsLetter) return true
+            start = idx + word.length
+        }
+    }
+    
+    /**
+     * 高亮关键词（区分大小写，单个字母启用单词边界）
      */
     private fun highlightWordIgnoreCase(originalText: String, targetWord: String): String {
-        val pattern = Regex("\\b${Regex.escape(targetWord)}\\b", RegexOption.IGNORE_CASE)
+        if (targetWord.length == 1 && (targetWord[0] in 'a'..'z' || targetWord[0] in 'A'..'Z')) {
+            return highlightStandaloneLetter(originalText, targetWord[0])
+        }
+        val pattern = Regex(Regex.escape(targetWord))
         return originalText.replace(pattern) { matchResult ->
             "<font color='red'>${matchResult.value}</font>"
         }
@@ -625,43 +762,43 @@ class ChapterPage : BaseActivity() {
             return text.replace("*", "")
         }
         
-        val isEnglish = text.isAllEnglishAndSymbols()
         var result = text
         
-        // 检查是否包含所有关键词
-        val containsAllKeywords = if (isEnglish) {
-            // 英文：检查单词边界匹配
-            keywords.all { keyword ->
-                val trimmed = keyword.trim()
-                trimmed.isEmpty() || containsWordIgnoreCase(text, trimmed)
-            }
-        } else {
-            // 中文：直接匹配
-            keywords.all { keyword ->
-                val trimmed = keyword.trim()
-                trimmed.isEmpty() || text.contains(trimmed, ignoreCase = true)
-            }
+        // 分离单个英文字母和其他关键词
+        val singleLetters = keywords.map { it.trim() }.filter { it.length == 1 && (it[0] in 'a'..'z' || it[0] in 'A'..'Z') }
+        val otherKeywords = keywords.map { it.trim() }.filter { it.isNotEmpty() && (it.length != 1 || (it[0] !in 'a'..'z' && it[0] !in 'A'..'Z')) }
+        
+        // 检查是否有任何匹配（用于决定是否需要高亮）
+        val hasAnyHit = singleLetters.any { containsStandaloneLetter(text, it[0]) } ||
+                        otherKeywords.any { keyword ->
+                            if (hasEnglishChars(keyword)) {
+                                containsWholeWordIgnoreCase(text, keyword)
+                            } else {
+                                text.contains(keyword)
+                            }
+                        }
+        
+        if (!hasAnyHit) return text.replace("*", "")
+
+        // 先处理单个英文字母（无论内容是中文还是英文，都需要单词边界过滤）
+        singleLetters.forEach { kw ->
+            result = highlightStandaloneLetter(result, kw[0])
         }
         
-        if (!containsAllKeywords) {
-            return text.replace("*", "")
-        }
-        
-        // 高亮所有关键词（英文使用单词边界，中文直接匹配）
-        keywords.forEach { keyword ->
-            val trimmed = keyword.trim()
-            if (trimmed.isNotEmpty()) {
-                if (isEnglish) {
-                    // 英文：使用单词边界匹配，忽略大小写
-                    result = highlightWordIgnoreCase(result, trimmed)
-                } else {
-                    // 中文：直接匹配并高亮
-                    result = result.replace(trimmed, "<font color='red'>$trimmed</font>", ignoreCase = true)
-                }
+        // 再处理其他关键词（直接匹配）
+        otherKeywords.forEach { keyword ->
+            result = if (hasEnglishChars(keyword)) {
+                highlightWholeWordIgnoreCase(result, keyword)
+            } else {
+                result.replace(keyword, "<font color='red'>$keyword</font>")
             }
         }
         
         return result.replace("*", "")
+    }
+
+    private fun hasEnglishChars(text: String): Boolean {
+        return text.any { it in 'A'..'Z' || it in 'a'..'z' }
     }
     
     /**

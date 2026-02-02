@@ -58,6 +58,7 @@ class AppSearchResultPage : BaseActivity() {
     private val pageSize = 20 // 每页数量
     private var isLoading = false
     private var hasMore = true
+    private var tempContentMode = -1
     override fun getRootView(): View {
         return binding.root
     }
@@ -186,19 +187,70 @@ class AppSearchResultPage : BaseActivity() {
             adapter.showLoading(false)
         }
     }
-    private fun isAllEnglish(text: String): Boolean {
-        return text.matches("^[a-zA-Z\\x20-\\x7E]+$".toRegex())
+    
+    private fun hasEnglish(text: String): Boolean {
+        return text.any { it in 'a'..'z' || it in 'A'..'Z' }
+    }
+    
+    private fun hasChinese(text: String): Boolean {
+        return text.any { it.code in 0x4E00..0x9FA5 }
+    }
+    
+    /**
+     * 检查文本中是否包含独立的单个字母（不在单词内部）
+     * @param text 要检查的文本
+     * @param letter 要查找的字母（会同时匹配大小写）
+     * @return 如果找到独立的字母则返回 true
+     */
+    private fun containsStandaloneLetter(text: String, letter: Char): Boolean {
+        val lowerLetter = letter.lowercaseChar()
+        val upperLetter = letter.uppercaseChar()
+        
+        for (i in text.indices) {
+            val c = text[i]
+            if (c == lowerLetter || c == upperLetter) {
+                // 检查前一个字符是否是英文字母
+                val prevChar = if (i > 0) text[i - 1] else ' '
+                val prevIsEnglishLetter = prevChar in 'A'..'Z' || prevChar in 'a'..'z'
+                // 检查后一个字符是否是英文字母
+                val nextChar = if (i < text.length - 1) text[i + 1] else ' '
+                val nextIsEnglishLetter = nextChar in 'A'..'Z' || nextChar in 'a'..'z'
+                
+                // 如果前后都不是英文字母，说明是独立字母
+                if (!prevIsEnglishLetter && !nextIsEnglishLetter) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    /**
+     * 检查文本中是否包含完整英文单词（忽略大小写，必须是完整单词）
+     */
+    private fun containsWholeWordIgnoreCase(text: String, word: String): Boolean {
+        if (word.isBlank()) return false
+        val lowerText = text.lowercase()
+        val lowerWord = word.lowercase()
+        var start = 0
+        while (true) {
+            val idx = lowerText.indexOf(lowerWord, start)
+            if (idx == -1) return false
+            val before = if (idx > 0) text[idx - 1] else ' '
+            val afterIndex = idx + word.length
+            val after = if (afterIndex < text.length) text[afterIndex] else ' '
+            val beforeIsLetter = before in 'A'..'Z' || before in 'a'..'z'
+            val afterIsLetter = after in 'A'..'Z' || after in 'a'..'z'
+            if (!beforeIsLetter && !afterIsLetter) return true
+            start = idx + word.length
+        }
     }
     
     /**
      * 将搜索文本转换为关键词列表
      */
     private fun parseSearchKeywords(searchContent: String): List<String> {
-        return if (isAllEnglish(searchContent)) {
-            listOf(searchContent)
-        } else {
-            searchContent.split(" ").filter { it.isNotBlank() }
-        }
+        return searchContent.split(" ").filter { it.isNotBlank() }
     }
     
     /**
@@ -229,13 +281,9 @@ class AppSearchResultPage : BaseActivity() {
         LogUtils.e("总页数======${result.size}=====列表数据===========>>>>>>${searchResultList.distinct().size}")
         result.forEach { chapter ->
             LogUtils.e("查询页数======${chapter}=====列表数据===========>>>>>>${searchResultList.distinct().size}")
-            // 搜索阶段不要受内容显示模式（中/双/EN）影响，否则会导致
-            // 例如当前只显示英文时，无法在同一章节中命中中文行
-            // 这里手动构造“不过滤语言的内容行列表”
-            val contentList = chapter.content
-                .split("\n")
-                .map { ChapterContentItem().init(it) }
-                .filter { !it.isNoFilter() }
+            // 搜索阶段使用临时模式（不影响系统设置）
+            val modeToUse = if (tempContentMode >= 0) tempContentMode else AppSettingUtil.getContentMode()
+            val contentList = com.sda.books.reader.util.getChapterContentShowList(chapter.content, modeToUse)
 
             LogUtils.e("=============${contentList}")
             LogUtils.e("=============${searchContentList}")
@@ -269,9 +317,25 @@ class AppSearchResultPage : BaseActivity() {
 
             for (index in 0 until contentList.size) {
                 val lineText = contentList[index].getShowContent()
-                // 只要这一行包含任意一个搜索词，就认为是命中；避免把完全不相关的行塞进结果列表
-                val hit = searchContentList.any { keyword ->
-                    keyword.isNotBlank() && lineText.contains(keyword, ignoreCase = true)
+                // 只要这一行包含任意一个搜索词，就认为是命中；区分大小写
+                // 如果是单个英文字母：
+                // - 需要大小写都能搜到（a/A 都算命中）
+                // - 但必须是"独立字母"，不能在单词内部（如 apple 内的 a 不算）
+                val hit = searchContentList.all { keyword ->
+                    if (keyword.isBlank()) return@all false
+                    val isSingleLetter = keyword.length == 1 && (keyword[0] in 'a'..'z' || keyword[0] in 'A'..'Z')
+                    if (isSingleLetter) {
+                        // 手动检查单个字母是否为独立字母（前后都不是英文字母）
+                        containsStandaloneLetter(lineText, keyword[0])
+                    } else {
+                        // 英文关键词：按完整单词匹配；其它关键词：忽略大小写包含
+                        val hasEnglish = keyword.any { it in 'A'..'Z' || it in 'a'..'z' }
+                        if (hasEnglish) {
+                            containsWholeWordIgnoreCase(lineText, keyword)
+                        } else {
+                            lineText.contains(keyword, ignoreCase = true)
+                        }
+                    }
                 }
                 if (hit) {
                     searchResultList.add(
@@ -305,31 +369,25 @@ class AppSearchResultPage : BaseActivity() {
         val searchContent = binding.etSearch.text.toString()
         if (searchContent.isEmpty()) return
 
-        // 根据输入内容和当前内容模式，智能切换“中/双/EN”以保证能看到命中的语言
-        val currentMode = AppSettingUtil.getContentMode() // 0=中，1=双，2=EN
-        val isEnglishQuery = isAllEnglish(searchContent)
-        if (currentMode == 0 && isEnglishQuery) {
-            // 只显示中文时，如果用户输入纯英文关键词，强制切到双语，方便看到英文上下文
-            AppSettingUtil.updateContentMode(1)
-        } else if (currentMode == 2 && !isEnglishQuery) {
-            // 只显示英文时，如果用户输入中文或中英混合，也切到双语，方便看到中文位置
-            AppSettingUtil.updateContentMode(1)
+        // 根据输入内容和当前内容模式，计算本次搜索使用的临时模式（不修改系统设置）
+        val systemMode = AppSettingUtil.getContentMode() // 0=中，1=双，2=EN
+        val hasEn = hasEnglish(searchContent)
+        val hasCn = hasChinese(searchContent)
+        
+        tempContentMode = when {
+            systemMode == 0 && hasEn -> 1  // 中模式 + 有英文搜索 → 临时用双模式
+            systemMode == 2 && hasCn -> 1  // EN模式 + 有中文搜索 → 临时用双模式
+            else -> systemMode // 其他情况保持系统设置
         }
+        adapter.tempContentMode = tempContentMode
 
         // 重置分页状态
         currentPage = 0
         hasMore = true
         isLoading = true
         adapter.clearData()
-        var list = ArrayList<String>()
-        if(isAllEnglish(searchContent)){
-            list.add(searchContent)
-        }else{
-            searchContent.split(" ").filter {
-                list.add(it)
-            }
-        }
-
+        
+        val list = parseSearchKeywords(searchContent)
         adapter.updateMatchList(list)
 
         // ====== 搜索开始：禁用搜索框和搜索按钮，显示加载状态 ======

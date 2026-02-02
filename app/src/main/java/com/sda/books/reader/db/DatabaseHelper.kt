@@ -68,7 +68,7 @@ class DatabaseHelper private constructor(private val context: Context) {
      * 从 assets 复制数据库到内部存储
      */
     private suspend fun copyDatabaseFromAssets() = withContext(Dispatchers.IO) {
-        val dbFile = context.getDatabasePath(DB_NAME)
+        val dbFile = File(dbPath)
         if (dbFile.exists() && dbFile.length() > 0) {
             return@withContext
         }
@@ -539,10 +539,6 @@ class DatabaseHelper private constructor(private val context: Context) {
         }
         return result
     }
-    fun isAllEnglish(text: String): Boolean {
-        return text.matches("^[a-zA-Z\\x20-\\x7E]+$".toRegex())
-    }
-
 
     suspend fun querylimitChapterWithSubCategoryIdFindAll(
         subCategoryIds: List<Int>,
@@ -931,27 +927,20 @@ class DatabaseHelper private constructor(private val context: Context) {
 
     /**
      * 构建搜索查询条件
+     * 数据库层只做粗筛（LIKE 匹配），精确过滤在内存中完成
+     * 无论系统设置如何，都添加搜索条件，以支持临时模式切换
      */
     private fun buildSearchConditions(searchContentList: List<String>, useParagraph: Boolean = false): String {
         val tableColumn = if (useParagraph) "paragraph.content" else "chapter.content"
-        val selectAnd = StringBuilder()
+        val conditions = searchContentList
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .map { key -> "$tableColumn like '%$key%' COLLATE NOCASE" }
         
-        searchContentList.forEach { item ->
-            val key = item.trimEnd()
-            val isEnglish = isAllEnglish(item)
-            val isOpenEn = AppSettingUtil.getIsOpenEn()
-            
-            when {
-                isOpenEn && isEnglish -> {
-                    selectAnd.append(" and $tableColumn like '%$key%' COLLATE NOCASE")
-                }
-                !isOpenEn && !isEnglish -> {
-                    selectAnd.append(" and $tableColumn like '%$item%'")
-                }
-            }
-        }
+        if (conditions.isEmpty()) return ""
         
-        return selectAnd.toString()
+        // 多关键词必须同时命中同一段落
+        return " and (${conditions.joinToString(" AND ")})"
     }
 
     suspend fun queryItemChapterContent(chapterId : Int,
@@ -1034,15 +1023,6 @@ class DatabaseHelper private constructor(private val context: Context) {
                 }
             }
         }
-    }
-
-    fun String.isAllEnglishAndSymbols(): Boolean {
-        // 正则表达式说明：
-        // ^ 表示字符串开头
-        // $ 表示字符串结尾
-        // [a-zA-Z\\x20-\\x7E]+ 表示匹配大小写字母及ASCII码32-126的可打印符号
-        // + 表示至少包含一个字符（空字符串返回false）
-        return matches(Regex("^[a-zA-Z\\x20-\\x7E]+$"))
     }
 
     /**

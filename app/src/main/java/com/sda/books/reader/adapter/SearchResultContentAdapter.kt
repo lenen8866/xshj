@@ -32,6 +32,7 @@ class SearchResultContentAdapter(val activity: Activity,val pageSize:Int) :
     var data = mutableListOf<SearchResultEntity>()
     var matchList = listOf<String>()
     private var isLoading = false
+    var tempContentMode: Int = -1
 
     fun updateData(data: List<SearchResultEntity>) {
         this.data.clear()
@@ -144,7 +145,11 @@ class SearchResultContentAdapter(val activity: Activity,val pageSize:Int) :
                     searchResultEntity.chapter.id,
                     searchResultEntity.scrollIndex,
                     searchResultEntity.tabs,
-                    ArrayList(matchList)
+                    ArrayList(matchList),
+                    // 传入“用户点击的那一行原文”，用于在 ChapterPage 精准定位到对应命中点
+                    searchResultEntity.content.getShowContent().replace("*", "").trim(),
+                    // 传入本次搜索的临时显示模式（不修改系统设置）
+                    tempContentMode
                 )
             }
 
@@ -203,7 +208,7 @@ class SearchResultContentAdapter(val activity: Activity,val pageSize:Int) :
         }
 
         /**
-         * 统一的高亮关键词函数（一次性匹配所有关键词，避免多次 replace 导致 HTML 嵌套）
+         * 统一的高亮关键词函数
          * @param text 原始文本
          * @param keywords 关键词列表（1-6个）
          * @param isEnglish 是否为英文内容（影响匹配方式）
@@ -230,36 +235,154 @@ class SearchResultContentAdapter(val activity: Activity,val pageSize:Int) :
         }
 
         /**
-         * 高亮英文关键词（一次性匹配所有关键词，避免 HTML 嵌套）
+         * 高亮英文关键词（区分大小写，单个字母启用单词边界过滤）
          */
         private fun highlightEnglishKeywords(text: String, keywords: List<String>): String {
-            // 转义所有关键词并构建正则表达式
-            val escapedKeywords = keywords.map { Regex.escape(it) }
-            // 使用单词边界匹配，忽略大小写，一次性匹配所有关键词
-            val pattern = Regex(
-                escapedKeywords.joinToString("|") { "\\b$it\\b" },
-                RegexOption.IGNORE_CASE
-            )
+            var result = text
             
-            // 一次性替换所有匹配项，使用 matchResult.value 保持原始大小写
-            return pattern.replace(text) { matchResult ->
-                "<font color='red'>${matchResult.value}</font>"
+            // 分离单个字母和多字符关键词
+            val singleLetters = keywords.filter { it.length == 1 && (it[0] in 'a'..'z' || it[0] in 'A'..'Z') }
+            val multiCharKeywords = keywords.filter { it.length > 1 || (it.length == 1 && it[0] !in 'a'..'z' && it[0] !in 'A'..'Z') }
+            
+            // 先处理单个字母（需要单词边界过滤）
+            singleLetters.forEach { kw ->
+                result = highlightStandaloneLetter(result, kw[0])
             }
+            
+            // 再处理多字符关键词（直接匹配）
+            if (multiCharKeywords.isNotEmpty()) {
+                multiCharKeywords.filter { it.isNotEmpty() }.forEach { kw ->
+                    result = highlightWholeWordIgnoreCase(result, kw)
+                }
+            }
+            
+            return result
+        }
+        
+        /**
+         * 高亮独立的单个字母（不在单词内部的字母，大小写都高亮）
+         */
+        private fun highlightStandaloneLetter(text: String, letter: Char): String {
+            val lowerLetter = letter.lowercaseChar()
+            val upperLetter = letter.uppercaseChar()
+            val result = StringBuilder()
+            
+            var i = 0
+            while (i < text.length) {
+                // 跳过已有的 HTML 标签
+                if (text.startsWith("<font", i)) {
+                    val endIdx = text.indexOf("</font>", i)
+                    if (endIdx != -1) {
+                        result.append(text.substring(i, endIdx + 7))
+                        i = endIdx + 7
+                        continue
+                    }
+                }
+                
+                val c = text[i]
+                if (c == lowerLetter || c == upperLetter) {
+                    val prevChar = if (i > 0) text[i - 1] else ' '
+                    val prevIsEnglishLetter = prevChar in 'A'..'Z' || prevChar in 'a'..'z'
+                    val nextChar = if (i < text.length - 1) text[i + 1] else ' '
+                    val nextIsEnglishLetter = nextChar in 'A'..'Z' || nextChar in 'a'..'z'
+                    
+                    if (!prevIsEnglishLetter && !nextIsEnglishLetter) {
+                        result.append("<font color='red'>$c</font>")
+                    } else {
+                        result.append(c)
+                    }
+                } else {
+                    result.append(c)
+                }
+                i++
+            }
+            return result.toString()
+        }
+
+        /**
+         * 高亮完整英文单词（忽略大小写，必须是完整单词）
+         */
+        private fun highlightWholeWordIgnoreCase(text: String, word: String): String {
+            if (word.isBlank()) return text
+            
+            val lowerWord = word.lowercase()
+            val result = StringBuilder()
+            var i = 0
+            
+            while (i < text.length) {
+                // 跳过已有的 HTML 标签
+                if (text.startsWith("<font", i)) {
+                    val endIdx = text.indexOf("</font>", i)
+                    if (endIdx != -1) {
+                        result.append(text.substring(i, endIdx + 7))
+                        i = endIdx + 7
+                        continue
+                    }
+                }
+                
+                // 动态获取当前位置的小写文本（不包含已处理部分）
+                val remainingText = text.substring(i)
+                val lowerRemainingText = remainingText.lowercase()
+                val idx = lowerRemainingText.indexOf(lowerWord)
+                
+                if (idx == -1) {
+                    result.append(remainingText)
+                    break
+                }
+                
+                // 计算在原文本中的实际位置
+                val actualIdx = i + idx
+                val before = if (actualIdx > 0) text[actualIdx - 1] else ' '
+                val afterIndex = actualIdx + word.length
+                val after = if (afterIndex < text.length) text[afterIndex] else ' '
+                val beforeIsLetter = before in 'A'..'Z' || before in 'a'..'z'
+                val afterIsLetter = after in 'A'..'Z' || after in 'a'..'z'
+                
+                if (!beforeIsLetter && !afterIsLetter) {
+                    // 找到完整单词，高亮
+                    result.append(remainingText.substring(0, idx))
+                    result.append("<font color='red'>")
+                    result.append(text.substring(actualIdx, actualIdx + word.length))
+                    result.append("</font>")
+                    i = actualIdx + word.length
+                } else {
+                    // 不是完整单词，继续查找
+                    result.append(remainingText.substring(0, idx + 1))
+                    i = actualIdx + 1
+                }
+            }
+            return result.toString()
         }
 
         /**
          * 高亮中文关键词（一次性匹配所有关键词，避免 HTML 嵌套）
          */
         private fun highlightChineseKeywords(text: String, keywords: List<String>): String {
-            // 转义所有关键词并构建正则表达式
-            val escapedKeywords = keywords.map { Regex.escape(it) }
-            // 直接匹配（不使用单词边界），一次性匹配所有关键词
-            val pattern = Regex(escapedKeywords.joinToString("|"))
+            var result = text
             
-            // 一次性替换所有匹配项，使用 matchResult.value 保持原始文本
-            return pattern.replace(text) { matchResult ->
-                "<font color='red'>${matchResult.value}</font>"
+            // 分离单个英文字母和其他关键词（即使在中文内容中，英文字母也需要单词边界过滤）
+            val singleLetters = keywords.filter { it.length == 1 && (it[0] in 'a'..'z' || it[0] in 'A'..'Z') }
+            val otherKeywords = keywords.filter { it.length != 1 || (it[0] !in 'a'..'z' && it[0] !in 'A'..'Z') }
+            
+            // 先处理单个英文字母（需要单词边界过滤）
+            singleLetters.forEach { kw ->
+                result = highlightStandaloneLetter(result, kw[0])
             }
+            
+            // 再处理其他关键词：英文按完整单词忽略大小写，其它关键词直接匹配
+            otherKeywords.filter { it.isNotBlank() }.forEach { keyword ->
+                result = if (hasEnglishChars(keyword)) {
+                    highlightWholeWordIgnoreCase(result, keyword)
+                } else {
+                    result.replace(keyword, "<font color='red'>$keyword</font>")
+                }
+            }
+            
+            return result
+        }
+
+        private fun hasEnglishChars(text: String): Boolean {
+            return text.any { it in 'A'..'Z' || it in 'a'..'z' }
         }
     }
 }

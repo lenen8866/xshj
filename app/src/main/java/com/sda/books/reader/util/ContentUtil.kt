@@ -44,17 +44,24 @@ fun filterContentByMode(raw: String, mode: Int): String {
 }
 
 fun getChapterContentShowList(content:String):List<ChapterContentItem>{
-    val contentMode = AppSettingUtil.getContentMode() // 0=中，1=双，2=EN
-    
+    return getChapterContentShowList(content, AppSettingUtil.getContentMode())
+}
+
+/**
+ * 根据指定的模式获取章节内容列表
+ * @param content 原始内容
+ * @param mode 内容模式：0=中，1=双，2=EN（可传入临时模式，不影响系统设置）
+ */
+fun getChapterContentShowList(content: String, mode: Int): List<ChapterContentItem> {
     // 先在整个内容上过滤 〖en〗...〖/en〗 标签（支持跨行）
-    val filteredContent = filterContentByMode(content, contentMode)
+    val filteredContent = filterContentByMode(content, mode)
     
     // 然后按行分割
     val contentList = filteredContent.split("\n")
     
     // 根据内容显示模式决定显示哪些内容
-    val isShowChina = contentMode != 2 // 中或双模式显示中文
-    val isShowEn = contentMode != 0    // 双或EN模式显示英文
+    val isShowChina = mode != 2 // 中或双模式显示中文
+    val isShowEn = mode != 0    // 双或EN模式显示英文
 
     val chapterContentItemList = contentList.map {
         ChapterContentItem().init(it)
@@ -62,6 +69,7 @@ fun getChapterContentShowList(content:String):List<ChapterContentItem>{
         if(it.isNoFilter())return@filter false
         if(it.isCn()) return@filter isShowChina
         if(it.isEng()) return@filter isShowEn
+        if(it.getShowContent().contains(".mp3")) return@filter false
         return@filter true
     }
     return chapterContentItemList
