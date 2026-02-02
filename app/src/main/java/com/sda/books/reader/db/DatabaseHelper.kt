@@ -287,33 +287,35 @@ class DatabaseHelper private constructor(private val context: Context) {
                     }
                 }
                 
-                if (categoryName.isNullOrEmpty()) {
+                val safeCategoryName = categoryName?.takeIf { it.isNotEmpty() }
+                if (safeCategoryName == null) {
                     Log.e(TAG, "查询分类路径失败: categoryId=$categoryId, 分类名称为空")
                     return@withContext null
                 }
                 
-                Log.d(TAG, "查询分类路径: categoryId=$categoryId, categoryName=$categoryName, parentId=$parentId")
+                Log.d(TAG, "查询分类路径: categoryId=$categoryId, categoryName=$safeCategoryName, parentId=$parentId")
+                val safeParentId = parentId
                 
                 // 3. 优先使用parentId查询父分类（最可靠的方式）
-                if (parentId != null && parentId > 0) {
+                if (safeParentId != null && safeParentId > 0) {
                     val parentCursor = query(
                         "category",
                         columns = arrayOf("id", "cateName"),
                         selection = "id = ?",
-                        selectionArgs = arrayOf("$parentId")
+                        selectionArgs = arrayOf("$safeParentId")
                     )
                     parentCursor?.use {
                         if (it.moveToNext()) {
                             val parentCateName = it.getString(it.getColumnIndexOrThrow("cateName"))
-                            Log.d(TAG, "查询分类路径: 通过parentId查询到父分类, parentId=$parentId, parentCateName=$parentCateName")
-                            return@withContext "$parentCateName-$categoryName"
+                            Log.d(TAG, "查询分类路径: 通过parentId查询到父分类, parentId=$safeParentId, parentCateName=$parentCateName")
+                            return@withContext "$parentCateName-$safeCategoryName"
                         }
                     }
                 }
                 
                 // 4. Fallback：如果parentId无效，检查分类名称是否包含"/"
-                if (categoryName.contains("/")) {
-                    val parts = categoryName.split("/", limit = 2)
+                if (safeCategoryName.contains("/")) {
+                    val parts = safeCategoryName.split("/", limit = 2)
                     if (parts.size == 2) {
                         Log.d(TAG, "查询分类路径: 通过字符串分割, parentName=${parts[0]}, childName=${parts[1]}")
                         return@withContext "${parts[0]}-${parts[1]}"
@@ -321,8 +323,8 @@ class DatabaseHelper private constructor(private val context: Context) {
                 }
                 
                 // 5. 如果都没有，只返回当前分类名称
-                Log.d(TAG, "查询分类路径: 只返回当前分类名称, categoryName=$categoryName")
-                return@withContext categoryName
+                Log.d(TAG, "查询分类路径: 只返回当前分类名称, categoryName=$safeCategoryName")
+                return@withContext safeCategoryName
                 
             } catch (e: Exception) {
                 Log.e(TAG, "查询分类路径失败: chapterId=$chapterId, error=${e.message}", e)
@@ -354,13 +356,15 @@ class DatabaseHelper private constructor(private val context: Context) {
                     }
                 }
                 
+                val safeParentId = parentId
+                
                 // 如果 parentId 存在且不为 0，查询父分类
-                if (parentId != null && parentId > 0) {
+                if (safeParentId != null && safeParentId > 0) {
                     val parentCursor = query(
                         "category",
                         columns = arrayOf("id", "cateName"),
                         selection = "id = ?",
-                        selectionArgs = arrayOf("$parentId")
+                        selectionArgs = arrayOf("$safeParentId")
                     )
                     parentCursor?.use {
                         if (it.moveToNext()) {
