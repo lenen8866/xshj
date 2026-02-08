@@ -122,3 +122,33 @@ git push
 
 .\gradlew app:dependencies --configuration debugRuntimeClasspath > deps.txt
 
+### 首次打开项目
+正常流程是：
+项目根目录/gradle/wrapper/gradle-wrapper.properties
+
+如果想要保存到D盘，
+
+此电脑 → 右键 → 属性
+高级系统设置
+
+环境变量
+
+新建【用户变量】👇
+
+变量名：
+GRADLE_USER_HOME
+
+
+变量值：D:\Gradle
+
+
+👉 用户变量即可，不要建系统变量（避免权限问题）
+
+下载到 2Gb
+
+自动解压
+
+Gradle sync 开始执行
+
+Android Studio 继续跑任务
+
