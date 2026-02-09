@@ -2,6 +2,7 @@ package com.sda.books.reader.adapter
 
 import android.R
 import android.graphics.Color
+import android.widget.TextView
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
@@ -78,23 +79,49 @@ class ChapterContentAdapter(val matchContent:ArrayList<String>) : RecyclerView.A
         holder.bind(data[position])
     }
 
+    override fun onBindViewHolder(holder: ChapterContentHolder, position: Int, payloads: MutableList<Any>) {
+        if (payloads.isNotEmpty() && payloads[0] == "highlight") {
+            // 局部更新：只刷新背景高亮，不重新设置文本（避免触发 EventBus 连锁滚动）
+            holder.updateHighlight()
+        } else {
+            super.onBindViewHolder(holder, position, payloads)
+        }
+    }
+
     fun highlightPosition(position: Int) {
         val previous = highlightPosition
         highlightPosition = position
 
-        if (previous != -1) notifyItemChanged(previous)
-        notifyItemChanged(position)
+        // 使用 payload 局部更新，避免完整 rebind 导致 EventBus 连锁滚动和光标乱跳
+        if (previous != -1) notifyItemChanged(previous, "highlight")
+        notifyItemChanged(position, "highlight")
 
         highlightRunnable?.let { highlightHandler.removeCallbacks(it) }
         highlightRunnable = Runnable {
             highlightPosition = -1
-            notifyItemChanged(position)
+            notifyItemChanged(position, "highlight")
         }
         highlightHandler.postDelayed(highlightRunnable!!, 3000)
     }
 
     inner class ChapterContentHolder(private val binding: ChapterContentItemBinding) :
         RecyclerView.ViewHolder(binding.root) {
+
+        /** 只更新背景高亮，不重新 bind 文本内容 */
+        fun updateHighlight() {
+            if (adapterPosition == highlightPosition) {
+                val highlightDrawable = GradientDrawable()
+                highlightDrawable.setColor(Color.parseColor("#EEEEEE"))
+                highlightDrawable.cornerRadius = 8f.dpToPx().toFloat()
+                binding.root.background = highlightDrawable
+                binding.root.animate().alpha(1f).setDuration(300).start()
+            } else {
+                binding.root.background = ContextCompat.getDrawable(
+                    binding.root.context,
+                    R.color.transparent
+                )
+            }
+        }
 
         fun bind(chapterContentItem : ChapterContentItem) {
             if (adapterPosition == highlightPosition) {
@@ -216,7 +243,8 @@ class ChapterContentAdapter(val matchContent:ArrayList<String>) : RecyclerView.A
             } else {
                 Html.fromHtml(userContent, Html.FROM_HTML_MODE_LEGACY)
             }
-            binding.tvContent.text = spannedText
+            // 使用 BufferType.SPANNABLE 确保 SelectableTextHelper 能正常工作（长按选择复制）
+            binding.tvContent.setText(spannedText, TextView.BufferType.SPANNABLE)
             binding.tvContent.post {
                 //LogUtils.e("行高==========----===${binding.tvContent.lineHeight}")
                 LogUtils.e("行高==========----===${binding.tvContent.measuredHeight}")

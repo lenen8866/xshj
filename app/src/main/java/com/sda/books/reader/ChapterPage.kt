@@ -8,11 +8,14 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.util.Log
 import android.view.View
 import android.widget.EdgeEffect
 import android.widget.SeekBar
 import android.widget.SeekBar.OnSeekBarChangeListener
+import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
@@ -177,7 +180,8 @@ class ChapterPage : BaseActivity() {
 
         lifecycleScope.launch {
             EventBus.chapterHeightFlow.collectLatest { height ->
-                if (scrollIndex > 0 && totalLineCount > 0) {
+                // 搜索模式下不使用 EventBus 滚动，避免与 scrollToSearchResult 冲突导致光标乱跑
+                if (matchContent.isEmpty() && scrollIndex > 0 && totalLineCount > 0) {
                     // 让目标尽量落在屏幕中间：在原有滚动距离基础上减去半屏高度
                     val viewportHalf = (binding.chapterContentList.height / 2f).toInt()
                     val dy = (stopLineCount * height / totalLineCount) - viewportHalf
@@ -381,11 +385,27 @@ class ChapterPage : BaseActivity() {
                     val highlightIndex = targetIndexForScroll
                     scrollIndex = targetIndexForScroll
                     val nData = mutableListOf<ChapterContentItem>()
-                    var targetIndexInNData = 0
+
+                    // 段落间距：使用 <br> 标签实现
+                    val contentMode = modeToUse
+                    val sectionSpace = AppSettingUtil.getTextSectionHLetterSpacing()
+                    val brCount = if (contentMode == 0) 1 else sectionSpace.coerceAtLeast(1)
+                    val pHeight = "<br>".repeat(brCount)
+
+                    // === 全文拼接方案：将所有文本段落拼接到单个 Item 中，支持跨段落自由选择复制 ===
+                    var insertContent = ""
+                    var insertChapterContentItem = ChapterContentItem()
 
                     for (index in 0 until chapterContentItemList.size) {
                         val item = chapterContentItemList[index]
                         if (item.isImg()) {
+                            // 遇到图片时，先保存之前积累的文本为一个 Item
+                            if (insertContent.isNotEmpty()) {
+                                val textItem = ChapterContentItem()
+                                textItem.setUserContent(insertContent)
+                                nData.add(textItem)
+                                insertContent = ""
+                            }
                             nData.add(item)
                         } else {
                             val strTxt = item.getShowContent()
@@ -406,32 +426,32 @@ class ChapterPage : BaseActivity() {
                                 strTxt.replace("*", "")
                             }
 
-                            item.setUserContent("$indentSpaces$processedText")
-                            nData.add(item)
-                        }
-                        
-                        // 记录目标行在 nData 中的索引
-                        if (index == highlightIndex) {
-                            targetIndexInNData = nData.size - 1
+                            // 拼接到 insertContent 中，用 <br> 分隔段落
+                            insertContent += "$indentSpaces$processedText$pHeight"
+
+                            // 计算行数（用于滚动定位）
+                            if (matchContent.isNotEmpty()) {
+                                val lineCount = calculateLineCount(strTxt)
+                                if (index <= scrollIndex) {
+                                    stopLineCount += lineCount
+                                }
+                                totalLineCount += lineCount
+                            }
                         }
 
-                        // 计算行数（用于滚动定位 - 老逻辑保留，但现在精准定位优先）
-                        if (matchContent.isNotEmpty()) {
-                            val content = item.getShowContent()
-                            val lineCount = calculateLineCount(content)
-                            if (index <= scrollIndex) {
-                                stopLineCount += lineCount
-                            }
-                            totalLineCount += lineCount
+                        // 最后一项：将剩余的拼接文本存为一个 Item
+                        if (index == chapterContentItemList.size - 1 && insertContent.isNotEmpty()) {
+                            insertChapterContentItem.setUserContent(insertContent)
+                            nData.add(insertChapterContentItem)
                         }
                     }
-                    
+
                     // 更新适配器数据
                     adapter.updateData(nData)
 
                     // 滚动到目标位置
                     if (matchContent.isNotEmpty()) {
-                        scrollToSearchResult(nData, targetIndexInNData)
+                        scrollToSearchResult(nData)
                     } else if (scrollIndex > 0) {
                         lifecycleScope.launch {
                             delay(500)
@@ -445,18 +465,78 @@ class ChapterPage : BaseActivity() {
 
     /**
      * 滚动到搜索结果位置
+     * 由于采用全文拼接方案（所有段落拼接到单个 Item），需要精确定位到 Item 内关键词的 Y 坐标
      */
-    private fun scrollToSearchResult(nData: List<ChapterContentItem>, targetIndexInNData: Int) {
+    private fun scrollToSearchResult(nData: List<ChapterContentItem>) {
         binding.chapterContentList.post {
             lifecycleScope.launch {
                 delay(300)
-                
-                val layoutManager = binding.chapterContentList.layoutManager as? LinearLayoutManager
-                if (layoutManager != null && targetIndexInNData in 0 until adapter.itemCount) {
-                    // 尽量把目标放在屏幕中间附近，避免顶到屏幕导致看不到上下文
-                    layoutManager.scrollToPositionWithOffset(targetIndexInNData, binding.chapterContentList.height / 2)
-                    adapter.highlightPosition(targetIndexInNData)
+
+                // 优先找包含高亮标记 <font color='red'> 的 Item，其次找包含所有关键词的 Item
+                val targetIndex = nData.indexOfFirst { item ->
+                    val txt = item.getUserContent()
+                    txt.isNotBlank() && txt.contains("<font color='red'>", ignoreCase = true)
+                }.takeIf { it >= 0 }
+                    ?: nData.indexOfFirst { item ->
+                        val txt = item.getUserContent()
+                        txt.isNotBlank() && matchContent.all { key ->
+                            val k = key.trim()
+                            k.isEmpty() || txt.contains(k, ignoreCase = true)
+                        }
+                    }.takeIf { it >= 0 }
+                    ?: 0
+
+                val layoutManager = binding.chapterContentList.layoutManager as? LinearLayoutManager ?: return@launch
+                if (targetIndex !in 0 until adapter.itemCount) return@launch
+
+                // Step 1: 先将目标 Item 滚动到屏幕顶部
+                layoutManager.scrollToPositionWithOffset(targetIndex, 0)
+
+                // Step 2: 等待 layout 完成
+                delay(500)
+
+                // Step 3: 在渲染后的 TextView 中精确定位关键词的 Y 坐标
+                val viewHolder = binding.chapterContentList.findViewHolderForAdapterPosition(targetIndex)
+                val tvContent = viewHolder?.itemView?.findViewById<TextView>(R.id.tv_content)
+
+                if (tvContent != null && tvContent.layout != null) {
+                    val viewportHeight = binding.chapterContentList.height
+                    var keywordLineTop = -1
+
+                    // 方法1：通过 ForegroundColorSpan 查找高亮位置（最精确，只定位被高亮的那个关键词）
+                    val text = tvContent.text
+                    if (text is Spanned) {
+                        val spans = text.getSpans(0, text.length, ForegroundColorSpan::class.java)
+                        if (spans.isNotEmpty()) {
+                            val spanStart = text.getSpanStart(spans[0])
+                            val line = tvContent.layout.getLineForOffset(spanStart)
+                            keywordLineTop = tvContent.layout.getLineTop(line)
+                        }
+                    }
+
+                    // 方法2：如果方法1未找到，使用关键词文本搜索（兜底）
+                    if (keywordLineTop < 0) {
+                        val plainText = tvContent.text.toString()
+                        val keyword = matchContent.firstOrNull()?.trim() ?: ""
+                        if (keyword.isNotEmpty()) {
+                            val keywordPos = plainText.indexOf(keyword, ignoreCase = true)
+                            if (keywordPos >= 0) {
+                                val line = tvContent.layout.getLineForOffset(keywordPos)
+                                keywordLineTop = tvContent.layout.getLineTop(line)
+                            }
+                        }
+                    }
+
+                    // 滚动到关键词位置（关键词居于屏幕约 1/3 处）
+                    if (keywordLineTop > 0) {
+                        val scrollY = keywordLineTop - viewportHeight / 3
+                        if (scrollY > 0) {
+                            binding.chapterContentList.scrollBy(0, scrollY)
+                        }
+                    }
                 }
+
+                adapter.highlightPosition(targetIndex)
             }
         }
     }

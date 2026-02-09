@@ -17,8 +17,8 @@
         app:layout_constraintTop_toTopOf="parent"
         android:layout_height="wrap_content"/>
 
-    <!-- 使用原生 TextView，启用文本选择 -->
-    <TextView
+    <!-- 使用自定义 SelectableTextView，避免系统选择导致滚动异常 -->
+    <com.sda.books.reader.view.SelectableTextView
         android:id="@+id/tv_content"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -26,10 +26,6 @@
         android:layout_height="wrap_content"
         android:textSize="18sp"
         android:textColor="#FF666666"
-        android:textIsSelectable="true"
-        android:longClickable="true"
-        android:focusable="true"
-        android:focusableInTouchMode="true"
         tools:text="示例文本，长按可以选择和复制" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

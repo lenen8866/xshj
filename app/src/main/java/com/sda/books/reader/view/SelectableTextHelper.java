@@ -92,7 +92,16 @@ public class SelectableTextHelper {
         mTextView.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
             @Override
             public void onViewAttachedToWindow(View v) {
-                // 不需要处理
+                // RecyclerView 回收后重新附加时，重新初始化被 destroy() 清空的资源
+                if (mOperateWindow == null) {
+                    mOperateWindow = new OperateWindow(mContext);
+                }
+                if (mOnPreDrawListener != null) {
+                    v.getViewTreeObserver().addOnPreDrawListener(mOnPreDrawListener);
+                }
+                if (mOnScrollChangedListener != null) {
+                    v.getViewTreeObserver().addOnScrollChangedListener(mOnScrollChangedListener);
+                }
             }
 
             @Override
@@ -174,6 +183,12 @@ public class SelectableTextHelper {
     private void showSelectView(int x, int y) {
         hideSelectView();
         resetSelectionInfo();
+        
+        // 防御性检查：如果 OperateWindow 已被 destroy，重新创建
+        if (mOperateWindow == null) {
+            mOperateWindow = new OperateWindow(mContext);
+        }
+        
         isHide = false;
         if (mStartHandle == null) mStartHandle = new CursorHandle(true);
         if (mEndHandle == null) mEndHandle = new CursorHandle(false);

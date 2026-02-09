@@ -199,7 +199,7 @@ class DatabaseHelper private constructor(private val context: Context) {
             try {
                 val cursor = query(
                     "category",
-                    columns = arrayOf("id", "cateName", "parentId"),
+                    columns = arrayOf("id", "cateName"),
                     selection = "id = ?",
                     selectionArgs = arrayOf("$categoryId")
                 )
@@ -250,7 +250,7 @@ class DatabaseHelper private constructor(private val context: Context) {
     }
 
     /**
-     * 根据章节ID查询分类路径（优先使用parentId，返回格式：父分类-子分类）
+     * 根据章节ID查询分类路径（通过cateName中的"/"分隔符解析层级，返回格式：父分类-子分类）
      * @param chapterId 章节ID
      * @return 分类路径字符串，格式：父分类-子分类，如果查询失败返回null
      */
@@ -266,24 +266,19 @@ class DatabaseHelper private constructor(private val context: Context) {
                 
                 Log.d(TAG, "查询分类路径: chapterId=$chapterId, categoryId=$categoryId")
                 
-                // 2. 查询分类信息（包含parentId）
+                // 2. 查询分类信息
                 val cursor = query(
                     "category",
-                    columns = arrayOf("id", "cateName", "parentId"),
+                    columns = arrayOf("id", "cateName"),
                     selection = "id = ?",
                     selectionArgs = arrayOf("$categoryId")
                 )
                 
                 var categoryName: String? = null
-                var parentId: Int? = null
                 
                 cursor?.use {
                     if (it.moveToNext()) {
                         categoryName = it.getString(it.getColumnIndexOrThrow("cateName"))
-                        val parentIdIndex = it.getColumnIndex("parentId")
-                        if (parentIdIndex >= 0 && !it.isNull(parentIdIndex)) {
-                            parentId = it.getInt(parentIdIndex)
-                        }
                     }
                 }
                 
@@ -293,27 +288,9 @@ class DatabaseHelper private constructor(private val context: Context) {
                     return@withContext null
                 }
                 
-                Log.d(TAG, "查询分类路径: categoryId=$categoryId, categoryName=$safeCategoryName, parentId=$parentId")
-                val safeParentId = parentId
+                Log.d(TAG, "查询分类路径: categoryId=$categoryId, categoryName=$safeCategoryName")
                 
-                // 3. 优先使用parentId查询父分类（最可靠的方式）
-                if (safeParentId != null && safeParentId > 0) {
-                    val parentCursor = query(
-                        "category",
-                        columns = arrayOf("id", "cateName"),
-                        selection = "id = ?",
-                        selectionArgs = arrayOf("$safeParentId")
-                    )
-                    parentCursor?.use {
-                        if (it.moveToNext()) {
-                            val parentCateName = it.getString(it.getColumnIndexOrThrow("cateName"))
-                            Log.d(TAG, "查询分类路径: 通过parentId查询到父分类, parentId=$safeParentId, parentCateName=$parentCateName")
-                            return@withContext "$parentCateName-$safeCategoryName"
-                        }
-                    }
-                }
-                
-                // 4. Fallback：如果parentId无效，检查分类名称是否包含"/"
+                // 3. 通过cateName中的"/"分隔符解析层级关系（如"圣经/旧约" → "圣经-旧约"）
                 if (safeCategoryName.contains("/")) {
                     val parts = safeCategoryName.split("/", limit = 2)
                     if (parts.size == 2) {
@@ -322,7 +299,7 @@ class DatabaseHelper private constructor(private val context: Context) {
                     }
                 }
                 
-                // 5. 如果都没有，只返回当前分类名称
+                // 4. 如果没有"/"，只返回当前分类名称
                 Log.d(TAG, "查询分类路径: 只返回当前分类名称, categoryName=$safeCategoryName")
                 return@withContext safeCategoryName
                 
@@ -334,37 +311,36 @@ class DatabaseHelper private constructor(private val context: Context) {
     }
 
     /**
-     * 查询父分类信息
+     * 查询父分类信息（通过cateName中的"/"分隔符找到父分类名，再查询对应的分类记录）
      */
     suspend fun queryCategoryParent(categoryId: Int): Category? {
         return withContext(Dispatchers.IO) {
             try {
-                // 先查询当前分类的 parentId
+                // 先查询当前分类的名称
                 val cursor = query(
                     "category",
-                    columns = arrayOf("id", "cateName", "parentId"),
+                    columns = arrayOf("id", "cateName"),
                     selection = "id = ?",
                     selectionArgs = arrayOf("$categoryId")
                 )
-                var parentId: Int? = null
+                var categoryName: String? = null
                 cursor?.use {
                     if (it.moveToNext()) {
-                        val parentIdIndex = it.getColumnIndex("parentId")
-                        if (parentIdIndex >= 0 && !it.isNull(parentIdIndex)) {
-                            parentId = it.getInt(parentIdIndex)
-                        }
+                        categoryName = it.getString(it.getColumnIndexOrThrow("cateName"))
                     }
                 }
                 
-                val safeParentId = parentId
+                val safeName = categoryName?.takeIf { it.isNotEmpty() } ?: return@withContext null
                 
-                // 如果 parentId 存在且不为 0，查询父分类
-                if (safeParentId != null && safeParentId > 0) {
+                // 通过cateName中的"/"分隔符解析父分类名
+                if (safeName.contains("/")) {
+                    val parentName = safeName.split("/", limit = 2)[0]
+                    // 查询父分类（cateName 完全等于父分类名的记录）
                     val parentCursor = query(
                         "category",
                         columns = arrayOf("id", "cateName"),
-                        selection = "id = ?",
-                        selectionArgs = arrayOf("$safeParentId")
+                        selection = "cateName = ?",
+                        selectionArgs = arrayOf(parentName)
                     )
                     parentCursor?.use {
                         if (it.moveToNext()) {
@@ -441,29 +417,23 @@ class DatabaseHelper private constructor(private val context: Context) {
     }
 
     fun querySubCategory(parentId: Int): List<Category> {
-        var nResult = listOf<Category>()
-        val cursor = query(
+        // 先查询parentId对应的分类名称，再通过"名称/"前缀查找子分类
+        var parentName = ""
+        val parentCursor = query(
             "category",
             columns = arrayOf("id", "cateName"),
-            selection = "parentId = ?",
+            selection = "id = ?",
             selectionArgs = arrayOf("$parentId")
         )
-        cursor?.use {
-            val result = mutableListOf<Category>()
-            while (it.moveToNext()) {
-                val id = it.getInt(it.getColumnIndexOrThrow("id"))
-                val name = it.getString(it.getColumnIndexOrThrow("cateName"))
-
-                val category = Category().apply {
-                    this.id = id
-                    this.cateName = name
-                }
-                result.add(category)
+        parentCursor?.use {
+            if (it.moveToNext()) {
+                parentName = it.getString(it.getColumnIndexOrThrow("cateName"))
             }
-
-            nResult = result.sortedWith(createNameComparator { it.cateName })
         }
-        return nResult.sortedBy { it.id }
+        if (parentName.isEmpty()) return emptyList()
+        
+        // 使用 querySubCategory1 的逻辑：通过 "parentName/" 前缀匹配子分类
+        return querySubCategory1(parentName)
     }
 
     suspend fun queryChapter(
@@ -762,7 +732,7 @@ class DatabaseHelper private constructor(private val context: Context) {
                 val cursor = query(
                     "chapter",
                     columns = arrayOf("id", "categoryId", "name", "volumeId", "indexId", "content"),
-                    selection = "parentId = ?",
+                    selection = "categoryId = ?",
                     selectionArgs = arrayOf("$categoryId")
                 )
                 cursor?.use {
